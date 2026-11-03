@@ -1,0 +1,2435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Night Shift: How AI Guards a Network</title>
+<style>
+:root {
+  --bg: #121417;
+  --bg2: #181b1f;
+  --text: #e8e6e1;
+  --muted: #9aa1a9;
+  --line: #2a2f36;
+  --term: #050806;
+  --term-edge: #1b2b21;
+  --tg: #39e07a;
+  --tg-dim: #5e8a6f;
+  --tg-soft: rgba(57, 224, 122, .13);
+  --tr: #ff4d5e;
+  --tr-soft: rgba(255, 77, 94, .15);
+  --tw: #d7e4da;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font: 18px/1.65 var(--sans); -webkit-text-size-adjust: 100%; min-height: 100vh; }
+[hidden] { display: none !important; }
+button { font-family: inherit; }
+sup { font-size: .7em; line-height: 0; }
+
+/* top bar */
+.top { position: fixed; inset: 0 0 auto 0; z-index: 10; background: rgba(18, 20, 23, .94); border-bottom: 1px solid var(--line); }
+.top .row { max-width: 720px; margin: 0 auto; display: flex; align-items: center; gap: 12px; padding: 9px 16px; }
+.clock { font: 600 14px var(--mono); color: var(--tg); min-width: 3.4em; }
+.where { flex: 1; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon-btn { background: none; border: 1px solid var(--line); color: var(--text); border-radius: 10px; width: 40px; height: 34px; font-size: 17px; cursor: pointer; }
+.progress { height: 2px; }
+.progress i { display: block; height: 100%; width: 0; background: var(--tg); transition: width .5s ease; }
+
+/* pages */
+main { max-width: 720px; margin: 0 auto; padding: 74px 18px 120px; }
+.page { display: none; }
+.page.active { display: block; animation: fade .45s ease both; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.kicker { font: 600 13px var(--mono); letter-spacing: .08em; color: var(--tg); text-transform: uppercase; margin: 8px 0 6px; }
+h1 { font-size: 48px; line-height: 1.08; margin: 10px 0 8px; letter-spacing: -.01em; }
+h2 { font-size: 29px; line-height: 1.2; margin: 2px 0 16px; }
+p { margin: 0 0 16px; }
+b { color: #fff; font-weight: 650; }
+.lead { font-size: 20px; color: var(--muted); }
+.small { font-size: 16px; color: var(--muted); }
+.step { display: none; scroll-margin-bottom: 120px; }
+.step.on { display: block; animation: rise .55s ease both; }
+.step.on.instant, .step.on.instant * { animation: none !important; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { @keyframes rise { from { opacity: 0; } to { opacity: 1; } } }
+.step.on .stagger > *, .step.on.stagger > * { animation: rise .5s ease both; animation-delay: calc(var(--i, 0) * .45s); }
+
+/* incident strip */
+.incident { display: inline-flex; align-items: flex-start; gap: 8px; font: 600 11.5px/1.4 var(--mono); letter-spacing: .05em; text-transform: uppercase;
+  color: var(--tr); border: 1px solid rgba(255, 77, 94, .45); background: var(--tr-soft); border-radius: 8px; padding: 4px 10px; margin: 0 0 14px; }
+.incident .pulse { flex: none; width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: var(--tr); animation: pulse 1.4s ease-in-out infinite; }
+.incident.closed { color: var(--tg); border-color: rgba(57, 224, 122, .45); background: var(--tg-soft); }
+.incident.closed .pulse { background: var(--tg); animation: none; }
+@keyframes pulse { 50% { opacity: .25; } }
+
+/* Sam, the team lead */
+.msg { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 18px; }
+.msg.step { display: none; }
+.msg.step.on { display: flex; }
+.ava { flex: none; width: 34px; height: 34px; border-radius: 50%; background: #2b323a; border: 1px solid #3a434d; color: #fff;
+  font: 700 15px/32px var(--sans); text-align: center; }
+.bubble { background: var(--bg2); border: 1px solid var(--line); border-radius: 4px 14px 14px 14px; padding: 8px 13px 9px; }
+.bubble .who { display: block; font: 600 11.5px var(--mono); color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+.bubble p { margin: 3px 0 0; font-size: 16.5px; line-height: 1.55; }
+
+/* "our move" blocks */
+.did, .why { border-radius: 12px; padding: 12px 14px; margin: 0 0 16px; background: var(--bg2); border: 1px solid var(--line); }
+.why { border-left: 3px solid var(--tg); }
+.did .lbl, .why .lbl { display: block; font: 600 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--tg); margin-bottom: 4px; }
+.did p, .why p { margin: 0; font-size: 16.5px; line-height: 1.6; }
+
+/* terminal panels: the only place for the hacker palette */
+.term { background: var(--term); border: 1px solid var(--term-edge); border-radius: 12px; margin: 0 0 18px; overflow: hidden;
+  font: 13.5px/1.6 var(--mono); color: var(--tw); }
+.term .bar { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-bottom: 1px solid var(--term-edge); color: var(--tg-dim); font-size: 12px; }
+.term .bar i { width: 9px; height: 9px; border-radius: 50%; background: #1f3a29; display: inline-block; }
+.term .bar span { margin-left: 6px; }
+.term .body { padding: 12px 14px; }
+.term b { color: var(--tg); }
+.term.alert { border-color: rgba(255, 77, 94, .45); box-shadow: inset 3px 0 0 var(--tr); }
+.term.alert .bar { color: var(--tr); border-bottom-color: rgba(255, 77, 94, .25); }
+.term.alert .bar i { background: #4a1a20; }
+.g { color: var(--tg); } .r { color: var(--tr); } .d { color: var(--tg-dim); } .w { color: #fff; }
+.kv { display: grid; grid-template-columns: 6.5em 1fr; gap: 0 10px; }
+.cursor::after { content: "▍"; color: var(--tg); animation: blink 1s steps(2) infinite; margin-left: 2px; }
+@keyframes blink { 50% { opacity: 0; } }
+.log div { animation: fade .4s ease both; white-space: pre-wrap; }
+.lines > div { padding: 1px 0; }
+.res { min-height: 1.6em; }
+.fr { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--term-edge); min-height: 2.2em; }
+
+/* diagrams */
+svg { display: block; width: 100%; height: auto; }
+.dg { max-width: 440px; margin: 0 auto; }
+.dg text { font-family: var(--mono); text-anchor: middle; dominant-baseline: central; }
+.dg .box { fill: #0a110c; stroke: var(--tg-dim); stroke-width: 1.5; }
+.dg .t1 { fill: var(--tg-dim); font-size: 10px; letter-spacing: .14em; }
+.dg .t2 { fill: var(--tg); font-size: 14px; }
+.dg .draw { fill: none; stroke: var(--tg); stroke-width: 2; transition: stroke-dashoffset 1s ease; }
+.dg .head { fill: var(--tg); opacity: 0; transition: opacity .3s ease .9s; }
+.dg .head.on { opacity: 1; }
+.dg .lab { font-size: 12px; fill: var(--tw); opacity: 0; transition: opacity .5s ease .6s; }
+.dg .lab.dim { fill: var(--tg-dim); font-size: 10px; letter-spacing: .12em; }
+.dg .lab.on { opacity: 1; }
+.dg .dot { opacity: 0; }
+.dg .fade { opacity: 0; transition: opacity .5s ease; }
+.dg .fade.on { opacity: 1; }
+.dg .start { text-anchor: start; }
+.dg .end { text-anchor: end; }
+
+/* chapter 1 */
+.peas { background: var(--term); border: 1px solid var(--term-edge); border-radius: 12px; padding: 4px 14px; margin: 0 0 18px; }
+.peas .prow { display: grid; grid-template-columns: 30px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--term-edge); }
+.peas .prow:last-child { border-bottom: 0; }
+.peas .k { font: 700 20px/1.3 var(--mono); color: var(--tg); }
+.peas .v { font-size: 16.5px; line-height: 1.5; }
+.peas .v small { display: block; color: var(--tg-dim); font: 11.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.step.on .peas .prow { animation: rise .5s ease both; }
+.step.on .peas .prow:nth-child(2) { animation-delay: .5s; }
+.step.on .peas .prow:nth-child(3) { animation-delay: 1s; }
+.step.on .peas .prow:nth-child(4) { animation-delay: 1.5s; }
+.rules .rrow { display: grid; grid-template-columns: 20px 1fr 62px; gap: 8px; padding: 7px 8px; border-radius: 8px;
+  transition: background .4s, opacity .4s, box-shadow .4s, transform .8s ease; }
+.rules .rhead { color: var(--tg-dim); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; padding-bottom: 4px; }
+.rules .rrow.scan { background: rgba(255, 255, 255, .08); }
+.rules .rrow.hitbad { background: var(--tr-soft); color: #fff; box-shadow: inset 3px 0 0 var(--tr); }
+.rules .rrow.hitgood { background: var(--tg-soft); color: #fff; box-shadow: inset 3px 0 0 var(--tg); }
+.rules .rrow.skip { opacity: .35; }
+.rules .pkt { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--term-edge); min-height: 1.6em; }
+.ladder { display: grid; gap: 10px; margin: 0 0 18px; }
+.rung { border: 1px solid var(--line); background: var(--bg2); border-radius: 12px; padding: 12px 14px; }
+.rung .lv { font: 600 12px var(--mono); color: var(--tg); letter-spacing: .08em; text-transform: uppercase; }
+.rung p { margin: 4px 0 0; font-size: 16.5px; line-height: 1.55; }
+.step.on .rung { animation: rise .5s ease both; }
+.step.on .rung:nth-child(2) { animation-delay: .6s; }
+.step.on .rung:nth-child(3) { animation-delay: 1.2s; }
+.step.on .rung:nth-child(4) { animation-delay: 1.8s; }
+.wall .side { fill: #0a110c; stroke: var(--tg-dim); stroke-width: 1.5; }
+.wall .fw { fill: #1a0a0d; stroke: var(--tr); stroke-width: 2; }
+.wall text { fill: var(--tw); font-size: 12px; }
+.wall .small { fill: var(--tg-dim); font-size: 10.5px; }
+.wall .packet { fill: #fff; transition: transform .8s ease-in; }
+.wall .x { fill: var(--tr); font-size: 22px; font-weight: 700; }
+.wall .blocked { fill: var(--tr); font-size: 12px; font-weight: 700; }
+
+/* chapter 2 */
+.graph .edge { stroke: #24402e; stroke-width: 2.5; transition: stroke .4s; }
+.graph .edge.bfs { stroke: var(--tr); stroke-dasharray: 6 5; }
+.graph .edge.ucs { stroke: var(--tg); stroke-width: 3.5; }
+.graph .edge.atk { stroke: var(--tr); stroke-width: 3.5; }
+.graph .cost { fill: var(--tw); font-size: 13px; }
+.graph .node rect { fill: #0a110c; stroke: var(--tg-dim); stroke-width: 1.5; transition: stroke .3s, fill .3s; }
+.graph .node text { fill: var(--tw); font-size: 13px; }
+.graph .node.goal rect { stroke: var(--tr); }
+.graph .node.done rect { fill: #10301c; stroke: var(--tg); }
+.graph .node.cur rect { stroke: #ffffff; stroke-width: 2.5; }
+.graph .node.guard rect { fill: #10301c; stroke: var(--tg); stroke-width: 3.5; }
+.graph .eye { fill: var(--tg); font-size: 11px; letter-spacing: .12em; font-weight: 700; }
+.srow { display: grid; grid-template-columns: 2.8em 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--term-edge); }
+.srow:last-child { border-bottom: 0; }
+.fcard { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--term-edge);
+  margin-bottom: 8px; transition: background .4s, opacity .4s, box-shadow .4s; }
+.fcard.pick { background: var(--tg-soft); box-shadow: inset 3px 0 0 var(--tg); }
+.fcard.skip { opacity: .4; }
+.order .edge { stroke: #24402e; stroke-width: 2; }
+.order .tn rect { fill: #0a110c; stroke: var(--tg-dim); stroke-width: 1.5; transition: stroke .3s, fill .3s; }
+.order .tn text { fill: var(--tw); font-size: 12px; }
+.order .tn.seen.b rect { stroke: var(--tg); fill: #10301c; }
+.order .tn.seen.d rect { stroke: #ffffff; fill: #1d2228; }
+.order .badge circle { fill: #ffffff; }
+.order .badge text { fill: #050806; font-size: 11px; font-weight: 700; }
+.ordcap { text-align: center; margin-top: 8px; min-height: 1.6em; }
+
+/* chapter 3 */
+.hill .pillar { fill: #10201a; stroke: #24402e; transition: fill .4s, stroke .4s; }
+.hill .pillar.seen { fill: #10301c; stroke: var(--tg); }
+.hill .val { fill: var(--tw); font-size: 12px; }
+.hill .idx { fill: var(--tg-dim); font-size: 11px; }
+.hill .climber { fill: #fff; transition: transform .6s ease; }
+.hill .stop { fill: var(--tg); font-size: 11px; text-anchor: start; opacity: 0; transition: opacity .4s; }
+.hill .stop.on { opacity: 1; }
+.land .curve { fill: none; stroke: var(--tg); stroke-width: 2.5; }
+.land .base { stroke: #24402e; stroke-width: 1.5; }
+.land .cl { opacity: 0; transition: opacity .3s; }
+.land .cl.on { opacity: 1; }
+.land .c0 { fill: #fff; }
+.land .c1 { fill: var(--tg-dim); }
+.land .c2 { fill: var(--tg); }
+.land .tag { font-size: 11px; fill: var(--tw); opacity: 0; transition: opacity .5s; }
+.land .tag.on { opacity: 1; }
+.hb .hb-bar.temp i { width: 100%; border-radius: 6px; }
+.dial .rowlab { fill: var(--tg-dim); font-size: 10px; letter-spacing: .08em; }
+.dial .track { stroke: #24402e; stroke-width: 4; stroke-linecap: round; }
+.dial .tick { stroke: var(--tg-dim); stroke-width: 2; }
+.dial .num { fill: var(--tg-dim); font-size: 12px; }
+.dial .score { fill: var(--tw); font-size: 12px; }
+.dial .score.no { fill: var(--tg-dim); }
+.dial .knob { fill: #fff; stroke: var(--tg); stroke-width: 3; transition: transform .6s ease; }
+.dial .best { fill: var(--tg); font-size: 12px; font-weight: 700; }
+
+/* chapter 4 */
+.tree .edge { stroke: #24402e; stroke-width: 2; transition: stroke .3s, opacity .3s; }
+.tree .edge.on { stroke: var(--tg); stroke-width: 3; }
+.tree .edge.pruned { opacity: .2; stroke-dasharray: 4 4; }
+.tree .shape { fill: #0a110c; stroke-width: 2; transition: fill .3s, stroke .3s; }
+.tree .max .shape { stroke: var(--tg); }
+.tree .min .shape { stroke: var(--tr); }
+.tree .leaf .shape { stroke: #2f4a39; }
+.tree .pick .shape { fill: #10301c; stroke: var(--tg); }
+.tree .tempt .shape { stroke: var(--tr); fill: var(--tr-soft); }
+.tree .tempt text { fill: var(--tr); text-decoration: line-through; }
+.tree .node { transition: opacity .3s; }
+.tree .node.pruned { opacity: .2; }
+.tree text { fill: var(--tw); font-size: 13px; font-weight: 700; }
+.tree text.q { fill: var(--tg-dim); }
+.tree text.role { font-size: 9px; fill: var(--tg-dim); text-anchor: end; letter-spacing: .08em; font-weight: 600; }
+.tree text.opt { font-size: 11px; fill: var(--tg-dim); }
+.tree text.cut { fill: var(--tr); font-size: 16px; opacity: 0; transition: opacity .3s; }
+.tree text.cut.on { opacity: 1; }
+.chance .edge { stroke: var(--tg-dim); stroke-width: 2; }
+.chance circle { fill: #0a110c; stroke: #fff; stroke-width: 2; }
+.chance rect { fill: #0a110c; stroke: #2f4a39; stroke-width: 1.5; }
+.chance text { fill: var(--tw); font-size: 13px; }
+.chance .p { fill: var(--tg); font-size: 12px; }
+.opts { display: grid; gap: 8px; }
+.opt { display: grid; grid-template-columns: 1.6em 1fr; gap: 2px 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--term-edge);
+  transition: background .4s, opacity .4s, box-shadow .4s; }
+.opt > b { grid-row: span 2; font-size: 18px; }
+.opt .sc { color: var(--tg-dim); font-size: 12.5px; }
+.opt.pick { background: var(--tg-soft); box-shadow: inset 3px 0 0 var(--tg); }
+.opt.pick .sc { color: var(--tg); }
+.opt.skip { opacity: .4; }
+
+/* chapter 5 */
+.mdp .ln { stroke: var(--tg-dim); stroke-width: 2; }
+.mdp rect { fill: #0a110c; stroke: var(--tg-dim); stroke-width: 1.5; }
+.mdp text { fill: var(--tw); font-size: 11px; }
+.mdp .st rect { stroke: #ffffff; }
+.mdp .act rect { fill: #13241a; }
+.mdp .bad rect { stroke: var(--tr); fill: #1a0a0d; }
+.mdp .good rect { stroke: var(--tg); fill: #10301c; }
+.qb { display: grid; grid-template-columns: 9em 1fr; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 8px;
+  transition: background .4s, box-shadow .4s; }
+.qb.best { background: var(--tg-soft); box-shadow: inset 3px 0 0 var(--tg); }
+.qbar { display: block; height: 14px; border-radius: 4px; background: #0d1610; }
+.qbar i { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--tg-dim); transition: width 1s ease; }
+.qb.best .qbar i { background: var(--tg); }
+.lan .link { stroke: var(--tg-dim); stroke-width: 2; transition: stroke .4s; }
+.lan .dev rect { fill: #0a110c; stroke: var(--tg-dim); stroke-width: 1.5; transition: stroke .4s, fill .4s; }
+.lan text { fill: var(--tw); font-size: 11.5px; }
+.lan .botbox rect { fill: #10301c; stroke: var(--tg); stroke-width: 2; }
+.lan .sw circle { fill: #0a110c; stroke: var(--tg); stroke-width: 2; }
+.lan.cut .link.l14 { stroke: var(--tr); stroke-dasharray: 5 4; }
+.lan.cut .dev.l14 rect { stroke: var(--tr); fill: #1a0a0d; }
+.lan .x { fill: var(--tr); font-size: 18px; font-weight: 700; }
+.lan .iso { fill: var(--tr); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+
+/* chapter 6 */
+.hb { margin: 0 0 14px; }
+.hb-l { font-size: 12.5px; color: var(--tg-dim); margin-bottom: 4px; }
+.hb-bar { position: relative; display: flex; height: 22px; border-radius: 6px; background: #0d1610; }
+.hb-bar i { display: block; height: 100%; width: 0; transition: width 1.2s ease; }
+.hb-bar i:first-child { border-radius: 6px 0 0 6px; }
+.hb-bar.on i { width: var(--w); }
+.hb-bar .a { background: var(--tr); }
+.hb-bar .n { background: #23402e; }
+.hb-bar .b { background: var(--tg); }
+.hb-k { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; margin-top: 4px; }
+.freq .nd { fill: #0a110c; stroke: var(--tg-dim); stroke-width: 1.5; }
+.freq .nd.atk { stroke: var(--tr); fill: #1a0a0d; }
+.freq .nd.sum { stroke: #ffffff; }
+.freq .ln, .bn .ln { stroke: var(--tg-dim); stroke-width: 2; }
+.freq text, .bn text { fill: var(--tw); font-size: 12px; }
+.freq .sm { fill: var(--tg-dim); font-size: 10px; }
+.bn .nd rect { fill: #0a110c; stroke: var(--tg-dim); stroke-width: 1.5; transition: stroke .3s, fill .3s; }
+.bn .nd.seen rect { stroke: var(--tg); fill: #10301c; }
+.bn .bl { fill: var(--tg-dim); font-size: 10.5px; }
+.bn .belt { fill: #13241a; }
+.bn .bel { fill: var(--tg); transform-box: fill-box; transform-origin: 0 50%; transition: transform 1s ease; }
+.bn .bel.atk { fill: var(--tr); }
+.topitem { margin-top: 6px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255, 77, 94, .5); background: var(--tr-soft);
+  opacity: 0; transition: opacity .5s; }
+.topitem.on { opacity: 1; }
+
+/* chapter 7 */
+.hmm .st { fill: #0a110c; stroke-width: 2.5; }
+.hmm .st.c { stroke: var(--tg); }
+.hmm .st.x { stroke: var(--tr); }
+.hmm text { fill: var(--tw); font-size: 11px; }
+.hmm .p { fill: #fff; font-size: 12.5px; font-weight: 700; }
+.hmm .tr { fill: none; stroke: var(--tg-dim); stroke-width: 2; }
+.hmm .arrowhead { fill: var(--tg-dim); }
+.hmm .em { font-size: 11.5px; }
+.cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; align-items: end; }
+.col { text-align: center; transition: opacity .4s; }
+.col.off { opacity: .25; }
+.pair { height: 110px; display: flex; align-items: flex-end; justify-content: center; gap: 4px; border-bottom: 1px solid var(--term-edge); }
+.pair i { width: 16px; height: var(--h, 0%); transition: height 1s ease; border-radius: 3px 3px 0 0; }
+.pair .cl { background: var(--tg); }
+.pair .cp { background: var(--tr); }
+.col .v { display: block; font-size: 11px; margin-top: 4px; min-height: 2.6em; line-height: 1.3; }
+.col .t { display: block; font-size: 10.5px; color: var(--tg-dim); text-transform: uppercase; letter-spacing: .06em; }
+.legend { display: flex; justify-content: center; gap: 16px; margin-top: 10px; font-size: 12px; }
+.vrow { display: flex; justify-content: space-between; gap: 10px; padding: 7px 10px; border-radius: 8px; margin-bottom: 6px;
+  border: 1px solid var(--term-edge); transition: background .4s, box-shadow .4s, opacity .4s; }
+.vrow.best { background: var(--tg-soft); box-shadow: inset 3px 0 0 var(--tg); }
+.vrow.dim { opacity: .45; }
+.gauge .arc { fill: none; stroke: #24402e; stroke-width: 14; stroke-linecap: round; }
+.gauge .arc.hot { stroke: rgba(255, 77, 94, .55); }
+.gauge .needle { stroke: #fff; stroke-width: 4; stroke-linecap: round; transform-origin: 160px 130px; transition: transform 1s ease; }
+.gauge .hub { fill: #fff; }
+.gauge .pct { fill: #fff; font-size: 26px; font-weight: 700; }
+.gauge .cap { fill: var(--tg-dim); font-size: 11px; }
+.gauge .tk { fill: var(--tg-dim); font-size: 10.5px; }
+
+/* chapter 8 */
+.sig .axis { stroke: #24402e; stroke-width: 1.5; }
+.sig .curve { fill: none; stroke: var(--tg); stroke-width: 3; transition: stroke-dashoffset 1.2s ease; }
+.sig .pt circle { fill: var(--term); stroke: var(--tg); stroke-width: 2; }
+.sig text { fill: var(--tw); font-size: 11px; }
+.sig .tick { fill: var(--tg-dim); font-size: 10px; }
+.sig .thr line { stroke: var(--tr); stroke-width: 2; stroke-dasharray: 6 4; }
+.sig .thr text { fill: var(--tr); }
+.sig .file circle { fill: var(--tr); }
+.sig .file text { fill: var(--tr); }
+.files { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin: 4px 0 10px; }
+.files i { aspect-ratio: 1; border-radius: 3px; background: #13241a; border: 1px solid #1d3326; transition: background .4s, border-color .4s; }
+.files.show i.m { background: var(--tr); border-color: var(--tr); }
+.files.always i { border-color: var(--tg); }
+.files.always i.m { background: transparent; border: 2px solid var(--tr); }
+.swc .sw-row { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.swc .sw-name { font-size: 15px; color: #fff; }
+.swc .sw { position: relative; width: 54px; height: 28px; border-radius: 14px; background: var(--tg); transition: background .4s; flex: none; }
+.swc .sw i { position: absolute; top: 3px; left: 29px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .4s; }
+.swc .sw-state { font-weight: 700; color: var(--tg); }
+.swc.off .sw { background: var(--tr); }
+.swc.off .sw i { left: 3px; }
+.swc.off .sw-state { color: var(--tr); }
+
+/* epilogue */
+.trail { list-style: none; margin: 0; padding: 0; }
+.trail li { position: relative; display: grid; grid-template-columns: 3.2em 1fr auto; gap: 8px; align-items: baseline; padding: 5px 0 5px 18px; }
+.trail li::before { content: ""; position: absolute; left: 1px; top: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--tr); }
+.trail li::after { content: ""; position: absolute; left: 4px; top: 22px; bottom: -10px; border-left: 2px solid rgba(255, 77, 94, .35); }
+.trail li:last-child::after { display: none; }
+.trail .t { color: var(--tg-dim); }
+.trail .tag { font-size: 11px; color: var(--tg); border: 1px solid var(--term-edge); border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.trail .tag.new { color: var(--tr); border-color: rgba(255, 77, 94, .5); }
+.trail li.new { color: #fff; }
+.mail { background: #f3f1ec; color: #1b1d20; border-radius: 12px; padding: 10px 14px 12px; margin: 0 0 18px; font-size: 15px;
+  line-height: 1.5; overflow-wrap: anywhere; }
+.mail .mrow { display: grid; grid-template-columns: 4.6em 1fr; gap: 8px; padding: 4px 0; border-bottom: 1px solid #ddd8cf; }
+.mail .mk, .mail .sig-line { color: #6b6f75; }
+.mail p { margin: 10px 0 0; }
+.mail mark { background: transparent; color: inherit; border-radius: 3px; transition: background .4s, box-shadow .4s; }
+.mail mark.on { background: rgba(217, 52, 72, .16); box-shadow: inset 0 -2px 0 #d93448; }
+.mail .link { color: #1d5bd6; text-decoration: underline; }
+.flog > div { display: grid; grid-template-columns: 3.4em 8.6em 1fr; gap: 6px; padding: 2px 6px; border-radius: 6px;
+  transition: background .4s, box-shadow .4s; }
+.flog .odd.on { background: var(--tr-soft); box-shadow: inset 3px 0 0 var(--tr); color: #fff; }
+.case { position: relative; background: #f3f1ec; color: #1b1d20; border-radius: 12px; padding: 14px 16px 60px; margin: 0 0 18px; overflow: hidden; }
+.case-h { font: 600 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #6b6f75; margin-bottom: 8px; }
+.kvc { display: grid; grid-template-columns: 6em 1fr; gap: 4px 10px; font-size: 15px; line-height: 1.45; }
+.kvc span:nth-child(odd) { color: #6b6f75; }
+.stamp { position: absolute; right: 14px; bottom: 12px; font: 800 17px var(--mono); letter-spacing: .14em; text-transform: uppercase;
+  color: #c8283c; border: 3px solid #c8283c; border-radius: 6px; padding: 2px 10px; opacity: 0; transform: rotate(-6deg); }
+.stamp.on { animation: stamp .5s ease-out both; }
+@keyframes stamp { from { opacity: 0; transform: rotate(-6deg) scale(1.8); } to { opacity: .9; transform: rotate(-6deg) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .stamp.on { animation: none; opacity: .9; } }
+
+/* remember card, contents, report */
+.remember { border: 1px solid var(--term-edge); border-radius: 12px; padding: 14px 16px 6px; background: linear-gradient(180deg, rgba(57, 224, 122, .07), rgba(57, 224, 122, 0) 70%); margin: 0 0 18px; }
+.remember .kicker { margin-top: 0; }
+.remember ul { margin: 0 0 8px; padding-left: 20px; }
+.remember li { margin: 6px 0; }
+.toc { list-style: none; padding: 0; margin: 0 0 16px; }
+.toc li { display: grid; grid-template-columns: 4.2em 1fr; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 16.5px; }
+.toc li span:first-child { font: 600 14px/1.9 var(--mono); color: var(--tg); }
+.toc button { all: unset; cursor: pointer; }
+.toc button:hover, .toc button:focus-visible { text-decoration: underline; }
+.report { list-style: none; padding: 0; margin: 0 0 18px; }
+.report li { display: grid; grid-template-columns: 3.4em 1fr; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 16px; line-height: 1.5; }
+.report li span:first-child { font: 600 13.5px/1.75 var(--mono); color: var(--tg); }
+.report li em { font-style: normal; color: var(--tg); }
+
+/* cover */
+.cover h1 { margin-top: 18px; }
+.cover .subtitle { font-size: 24px; margin: 0 0 6px; color: #fff; }
+.cover .term { margin-top: 26px; }
+.cover .log { min-height: 13.5em; }
+
+/* bottom controls */
+.controls { position: fixed; inset: auto 0 0 0; z-index: 10; background: rgba(18, 20, 23, .96); border-top: 1px solid var(--line); }
+.controls .row { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+.count { font: 13px var(--mono); color: var(--muted); }
+.btn { font: 600 16px var(--sans); border-radius: 999px; padding: 10px 20px; border: 1px solid var(--text); background: var(--text); color: #111; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+.btn:disabled { opacity: .4; cursor: default; }
+.menu { position: fixed; inset: 0; z-index: 20; background: rgba(8, 9, 11, .8); display: flex; align-items: flex-start; justify-content: center; padding: 60px 16px; overflow-y: auto; }
+.menu-card { width: 100%; max-width: 480px; background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+.menu-card .btn { margin-top: 6px; }
+
+@media (max-width: 480px) {
+  body { font-size: 17px; }
+  h1 { font-size: 40px; }
+  h2 { font-size: 25px; }
+  .term { font-size: 12.5px; }
+  .kv { grid-template-columns: 5.6em 1fr; }
+  .btn { padding: 9px 16px; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="row">
+    <span class="clock">SOC</span>
+    <span class="where">Night Shift</span>
+    <button class="icon-btn" data-go="menu" aria-label="Contents">☰</button>
+  </div>
+  <div class="progress"><i></i></div>
+</header>
+
+<main>
+
+<!-- ===================== COVER ===================== -->
+<section class="page cover" data-where="Night Shift" data-init="cover" data-toc="|Cover">
+  <p class="kicker">Cybersecurity internship · first night shift</p>
+  <h1>Night Shift</h1>
+  <p class="subtitle">How AI guards a network</p>
+  <p class="lead">One night, one cyber attack, eight ideas from artificial intelligence.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>shift.log</span></div>
+    <div class="body log" id="boot"></div>
+  </div>
+  <p class="small">Tap anywhere or press Next to start.</p>
+</section>
+
+<!-- ===================== HOW TO READ ===================== -->
+<section class="page" data-where="How this book works" data-toc="|How this book works">
+  <p class="kicker">Before you start</p>
+  <h2>How this book works</h2>
+  <p>You've just started an internship on a company's security team. Tonight is your first night shift in the SOC, the
+    Security Operations Center: the room where the team watches the company's network day and night.</p>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Bad timing for a first night. Someone is probing our network, and I don't think it's a test. Stay close.</p></div></div>
+  <p class="step">Over the next eight hours a real attack unfolds, step by step. Every hour we push it back with a
+    different idea from artificial intelligence. Each chapter ends with our move: what we did, and why that idea was the
+    right tool. In the morning, we find out who was behind it.</p>
+  <p class="step">Text and diagrams appear one step at a time. Tap anywhere or press Next when you're ready, and Back to
+    return. The ☰ button opens the list of chapters.</p>
+  <div class="step"><ol class="toc" data-toc-list="page"></ol></div>
+</section>
+
+<!-- ===================== CHAPTER 1 · 22:00 ===================== -->
+<section class="page" data-clock="22:00" data-where="Ch. 1 · The firewall is an agent" data-toc="22:00|The firewall is an agent">
+  <p class="kicker">22:00 · Chapter 1</p>
+  <h2>The firewall is an agent</h2>
+  <div class="incident"><span class="pulse"></span>Incident · 22:04 · a blocked address got in</div>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Something just got through the firewall. Look at this.</p></div></div>
+  <div class="term alert">
+    <div class="bar"><i></i><i></i><i></i><span>ALERT · firewall</span></div>
+    <div class="body kv">
+      <span class="d">22:04</span><span class="r">suspicious traffic</span>
+      <span class="d">from</span><span class="w">203.0.113.7</span>
+      <span class="d">to</span><span>web server, port 443</span>
+      <span class="d">result</span><span class="r">ALLOWED</span>
+      <span class="d">note</span><span>203.0.113.7 is on the block list</span>
+    </div>
+  </div>
+  <p class="step">An address on the block list got through the firewall. Every minute that door stays open, the attacker
+    can try more of our machines.</p>
+  <p class="step">Nobody broke into the firewall. It did exactly what its rules told it to do. To see why, we need the
+    most basic idea in AI: the <b>agent</b>.</p>
+</section>
+
+<section class="page" data-clock="22:00" data-where="Ch. 1 · The firewall is an agent" data-init="loop">
+  <p class="kicker">22:00 · Chapter 1</p>
+  <h2>Sense, decide, act</h2>
+  <p>An <b>agent</b> is anything that perceives its <b>environment</b> through sensors and acts on it through
+    actuators, like a guard at a door who looks, decides and acts, again and again. What the sensors report at one
+    moment is called a <b>percept</b>.</p>
+  <div class="term step" data-run="loopIn">
+    <div class="bar"><i></i><i></i><i></i><span>agent loop</span></div>
+    <div class="body">
+      <svg class="dg" viewBox="0 0 320 212" role="img" aria-label="The agent loop: percepts come in from the environment, actions go back out to it">
+        <rect class="box" x="30" y="10" width="260" height="46" rx="10"/>
+        <text class="t1" x="160" y="25">ENVIRONMENT</text><text class="t2" x="160" y="43">network traffic</text>
+        <rect class="box" x="30" y="156" width="260" height="46" rx="10"/>
+        <text class="t1" x="160" y="171">AGENT</text><text class="t2" x="160" y="189">firewall</text>
+        <path class="draw" data-arrow="in" d="M70 58 L70 147"/>
+        <polygon class="head" data-head="in" points="64,146 76,146 70,155"/>
+        <text class="lab dim start" data-lab="in" x="82" y="88">PERCEPT</text>
+        <text class="lab start" data-lab="in" x="82" y="106">packet header</text>
+        <path class="draw" data-arrow="out" d="M250 154 L250 65"/>
+        <polygon class="head" data-head="out" points="244,66 256,66 250,57"/>
+        <text class="lab dim end" data-lab="out" x="238" y="122">ACTION</text>
+        <text class="lab end" data-lab="out" x="238" y="140">allow · block · log</text>
+        <rect class="dot" data-dot="in" x="65" y="58" width="10" height="10" rx="2" fill="#ffffff"/>
+        <circle class="dot" data-dot="out" cx="250" cy="150" r="5" fill="#39e07a"/>
+      </svg>
+    </div>
+  </div>
+  <p class="step" data-run="loopOut">A firewall fits this exactly. Its percept is the header of one packet: where it
+    comes from, where it's going and which port it wants. Its actions are allow, block and log. Then the next packet
+    arrives, and the loop starts again.</p>
+  <div class="step">
+    <p>Engineers describe an agent's job with a <b>PEAS</b> card:</p>
+    <div class="peas">
+      <div class="prow"><span class="k">P</span><span class="v"><small>Performance measure</small>stop attacks and let real users through</span></div>
+      <div class="prow"><span class="k">E</span><span class="v"><small>Environment</small>the network and everyone using it</span></div>
+      <div class="prow"><span class="k">A</span><span class="v"><small>Actuators</small>allow, block, log</span></div>
+      <div class="prow"><span class="k">S</span><span class="v"><small>Sensors</small>packet headers</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="page" data-clock="22:00" data-where="Ch. 1 · The firewall is an agent" data-init="rules">
+  <p class="kicker">22:00 · Chapter 1</p>
+  <h2>Rules, read from the top</h2>
+  <p>The simplest kind of agent is a <b>simple reflex agent</b>. It applies IF-THEN rules to the current percept and
+    nothing else. A firewall reads its rules from the top and stops at the first one that matches.</p>
+  <div class="term rules">
+    <div class="bar"><i></i><i></i><i></i><span>firewall.rules</span></div>
+    <div class="body">
+      <div class="rrow rhead"><span>#</span><span>match</span><span>action</span></div>
+      <div class="list">
+        <div class="rrow" data-r="a"><span class="n">1</span><span>port 443, any source</span><span>ALLOW</span></div>
+        <div class="rrow" data-r="b"><span class="n">2</span><span>source 203.0.113.7</span><span>BLOCK</span></div>
+        <div class="rrow" data-r="c"><span class="n">3</span><span>anything else</span><span>BLOCK</span></div>
+      </div>
+      <div class="pkt"></div>
+      <div class="res"></div>
+    </div>
+  </div>
+  <p class="step" data-run="check">Here comes the packet from the alert. Rule 1 matches first, so the packet is
+    allowed. Rule 2, written for exactly this address, is never even read.</p>
+  <p class="step" data-run="fix">Swap the first two rules and the same packet is blocked. The agent wasn't broken.
+    Its rules were in the wrong order.</p>
+  <p class="step small">Any chain of IF-THEN rules works like this. An office climate system with the rules "heat
+    below 20 °C", "cool above 26 °C" and "fresh air above 1,000 ppm of CO₂" never turns on the fresh air on a cold,
+    crowded morning, because the heating rule fires first.</p>
+</section>
+
+<section class="page" data-clock="22:00" data-where="Ch. 1 · The firewall is an agent">
+  <p class="kicker">22:00 · Chapter 1</p>
+  <h2>From reflexes to memory</h2>
+  <p>Reflex agents are fast, but they forget everything after each percept. AI describes four kinds of agents, and
+    each one can do more than the one before.</p>
+  <div class="step">
+    <div class="ladder">
+      <div class="rung"><span class="lv">1 · Simple reflex</span><p>IF-THEN rules on the current percept. The packet
+        filter we just looked at.</p></div>
+      <div class="rung"><span class="lv">2 · Model-based</span><p>Keeps an internal state, so it remembers what it
+        can't see right now. A stateful firewall keeps a table of open connections and lets a reply in only if
+        someone inside asked for it.</p></div>
+      <div class="rung"><span class="lv">3 · Goal-based</span><p>Imagines future states and searches for actions that
+        reach a goal. That's the next hour.</p></div>
+      <div class="rung"><span class="lv">4 · Utility-based</span><p>Scores outcomes with a number, so it can weigh
+        goals against each other, like safety against speed. That's the last hour of the night.</p></div>
+    </div>
+  </div>
+  <p class="step">The firewall's world is a hard one. It is <b>partially observable</b>: it sees headers, not
+    intentions. It is multi-agent, because attackers adapt. It is stochastic, because it can't predict what arrives
+    next. And it is dynamic: traffic keeps flowing while it decides.</p>
+  <p class="step">A <b>rational agent</b> picks the action with the best expected performance, given what it has
+    perceived so far. Rational doesn't mean all-knowing. A firewall that reads only headers can't know what a packet
+    is for, and it can still be rational.</p>
+</section>
+
+<section class="page" data-clock="22:00" data-where="Ch. 1 · Our move" data-init="bounce">
+  <p class="kicker">22:00 · Our move</p>
+  <h2>Fix the rule order</h2>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>firewall · after the fix</span></div>
+    <div class="body">
+      <svg class="dg wall" viewBox="0 0 320 132" role="img" aria-label="The attacker's packet hits the firewall and is blocked before it reaches the web server">
+        <rect class="side" x="6" y="44" width="94" height="44" rx="10"/><text x="53" y="59">attacker</text><text class="small" x="53" y="76">203.0.113.7</text>
+        <rect class="fw" x="150" y="22" width="18" height="90" rx="4"/><text class="small" x="159" y="12">rule 1: BLOCK 203.0.113.7</text>
+        <rect class="side" x="218" y="44" width="96" height="44" rx="10"/><text x="266" y="66">web server</text>
+        <rect class="packet" x="106" y="60" width="12" height="12" rx="2"/>
+        <text class="x fade" x="159" y="67">✕</text><text class="blocked fade" x="159" y="124">BLOCKED</text>
+      </svg>
+    </div>
+  </div>
+  <div class="step did" data-run="bounce"><span class="lbl">What we did</span>
+    <p>We moved the block rule above the allow rule. Now the firewall checks the attacker's address before it looks at
+      the port, and the attacker's packets bounce off.</p></div>
+  <div class="step why"><span class="lbl">Why this idea fits</span>
+    <p>Seeing the firewall as an agent (sense, decide, act) showed exactly which part failed. Its senses were fine: it
+      read the attacker's address. Its decision was wrong, because the rules were checked in the wrong order. Once you
+      know which part failed, the fix is small.</p></div>
+  <div class="step remember">
+    <p class="kicker">Remember</p>
+    <ul>
+      <li>An agent senses, decides and acts, over and over.</li>
+      <li>Reflex rules are read from the top. The first match wins, so the order of the rules matters.</li>
+      <li>Memory, goals and utilities make agents smarter, but none of them sees everything.</li>
+    </ul>
+  </div>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Good, that door's shut. But they were inside for twenty minutes before we closed it.</p></div></div>
+</section>
+
+<!-- ===================== CHAPTER 2 · 23:00 ===================== -->
+<section class="page" data-clock="23:00" data-where="Ch. 2 · Mapping the way in" data-toc="23:00|Mapping the way in">
+  <p class="kicker">23:00 · Chapter 2</p>
+  <h2>Mapping the way in</h2>
+  <div class="incident"><span class="pulse"></span>Incident · 23:10 · attacker on the web server</div>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>They're on the web server. If I were them, I'd go for the payments database next. We need their route before
+      they find it.</p></div></div>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>attack-paths.txt</span></div>
+    <div class="body lines">
+      <div>web server &nbsp;→ mail server &nbsp;<span class="d">effort</span> 2</div>
+      <div>web server &nbsp;→ VPN gateway &nbsp;<span class="d">effort</span> 8</div>
+      <div>mail server → payments DB &nbsp;<span class="d">effort</span> 10</div>
+      <div>VPN gateway → payments DB &nbsp;<span class="d">effort</span> 1</div>
+    </div>
+  </div>
+  <p class="step">Each line is a move the attacker could make, and the number is the effort it takes: hours of work,
+    say. The lower the total, the more likely the attacker is to take that route.</p>
+  <p class="step">Finding the easiest way from the web server to the database is a search problem. It's the same
+    problem as finding a route on a map, just with machines instead of cities.</p>
+</section>
+
+<section class="page" data-clock="23:00" data-where="Ch. 2 · Mapping the way in">
+  <p class="kicker">23:00 · Chapter 2</p>
+  <h2>Search and the frontier</h2>
+  <p>A search problem has a <b>state space</b> (here, the machines), actions with costs (the moves), a start and a goal
+    test. A solution is a sequence of actions from the start to the goal.</p>
+  <div class="term step">
+    <div class="bar"><i></i><i></i><i></i><span>search.pseudo</span></div>
+    <div class="body lines">
+      <div>frontier ← [start]</div>
+      <div>while frontier is not empty:</div>
+      <div>&nbsp;&nbsp;route ← take one route out of frontier <span class="g">← the choice</span></div>
+      <div>&nbsp;&nbsp;if route ends at the goal: return route</div>
+      <div>&nbsp;&nbsp;add each one-step-longer route to frontier</div>
+    </div>
+  </div>
+  <p class="step">The <b>frontier</b> is a to-do list: routes that have been found but not explored yet. Search
+    strategies differ in only one thing, which route they take off the list next.</p>
+  <div class="term step">
+    <div class="bar"><i></i><i></i><i></i><span>strategies</span></div>
+    <div class="body stagger">
+      <div class="srow" style="--i:0"><b>BFS</b><span>oldest route first (a queue)<br><span class="d">→ fewest steps</span></span></div>
+      <div class="srow" style="--i:1"><b>DFS</b><span>newest route first (a stack)<br><span class="d">→ little memory, any route</span></span></div>
+      <div class="srow" style="--i:2"><b>UCS</b><span>cheapest route so far, g(n)<br><span class="d">→ cheapest route</span></span></div>
+      <div class="srow" style="--i:3"><b>A*</b><span>lowest g(n) + h(n)<br><span class="d">→ cheapest route, usually faster</span></span></div>
+    </div>
+  </div>
+</section>
+
+<section class="page" data-clock="23:00" data-where="Ch. 2 · Mapping the way in" data-init="order">
+  <p class="kicker">23:00 · Chapter 2</p>
+  <h2>Wide or deep?</h2>
+  <p>The two simplest strategies explore in opposite ways. Here both map the machines reachable from the web server,
+    and the numbers show the order in which each one checks them.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>exploration order</span></div>
+    <div class="body"><div class="order-host"></div><div class="ordcap"></div></div>
+  </div>
+  <p class="step" data-run="bfsOrder"><b>Breadth-first search</b> (BFS) checks everything one step away, then
+    everything two steps away, like ripples spreading on water. Its to-do list is a queue: first in, first out, like a
+    line at a shop.</p>
+  <p class="step" data-run="dfsOrder"><b>Depth-first search</b> (DFS) follows one path as far as it goes, then backs
+    up and tries the next one, like walking a maze: down one corridor to the end, then back to the last turn. Its
+    to-do list is a stack: last in, first out, like a pile of plates.</p>
+  <p class="step">DFS remembers little more than the path it's on, so it needs very little memory. But it returns the
+    first route it finds, not the best one, and without a list of visited machines it can go round in circles forever.
+    Iterative deepening fixes that: run DFS with a depth limit of 1, then 2, then 3. It keeps the small memory of DFS
+    and finds the shallowest answer, like BFS.</p>
+</section>
+
+<section class="page" data-clock="23:00" data-where="Ch. 2 · Mapping the way in" data-init="graph">
+  <p class="kicker">23:00 · Chapter 2</p>
+  <h2>Fewest steps or least effort?</h2>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>attack-path.search</span></div>
+    <div class="body"><div class="graph-host"></div><div class="fr"></div><div class="res"></div></div>
+  </div>
+  <p class="step" data-run="bfs">BFS spreads in layers. It reaches the database through the mail server: two moves,
+    the fewest possible, but effort 2 + 10 = 12.</p>
+  <p class="step" data-run="ucs"><b>Uniform-cost search</b> (UCS) takes the cheapest route so far. The mail server (2)
+    goes first and reaches the database at 12. But the VPN gateway, at 8, is still cheaper than 12, so it goes next and
+    reaches the database at 9.</p>
+  <p class="step">Same network, two answers. BFS finds the cheapest route only when every move costs the same. UCS
+    always finds it, as long as costs are positive. DFS would simply follow whichever branch it tried first down to the
+    database, so here it could return either route, 12 or 9, by luck.</p>
+</section>
+
+<section class="page" data-clock="23:00" data-where="Ch. 2 · Mapping the way in" data-init="astar">
+  <p class="kicker">23:00 · Chapter 2</p>
+  <h2>A* adds a good guess</h2>
+  <p>UCS only looks back, at the effort spent so far, g(n). <b>A*</b> also estimates the effort still needed, the
+    <b>heuristic</b> h(n), like a driver who counts the distance already driven plus a rough guess of what's left. It
+    takes the route with the lowest f(n) = g(n) + h(n).</p>
+  <div class="term step" data-run="astar">
+    <div class="bar"><i></i><i></i><i></i><span>a-star.frontier</span></div>
+    <div class="body">
+      <div class="fcard" data-c="1"><span>route 1</span><span>g 4 + h 8 = <b>f 12</b></span></div>
+      <div class="fcard" data-c="2"><span>route 2</span><span>g 7 + h 2 = <b>f 9</b></span></div>
+      <div class="res astar-res"></div>
+    </div>
+  </div>
+  <p class="step">Route 2 has cost more so far, but it's almost there, so A* explores it first. With h = 0, A* is
+    exactly UCS.</p>
+  <p class="step">The guess must never be bigger than the real effort left: 0 ≤ h(n) ≤ h*(n). Such a heuristic is
+    <b>admissible</b>, and with it A* always returns the cheapest route. On a grid, counting the steps left (the
+    Manhattan distance) is a classic admissible guess. A heuristic that overestimates can return a worse route.</p>
+  <p class="step">Defenders map whole networks as graphs and search them for the cheapest attack paths to their most
+    important systems. Internet routers solve the same kind of problem all the time: the OSPF routing protocol uses
+    Dijkstra's algorithm, which is essentially UCS.</p>
+</section>
+
+<section class="page" data-clock="23:00" data-where="Ch. 2 · Our move" data-init="routeMove">
+  <p class="kicker">23:00 · Our move</p>
+  <h2>Guard the cheapest path</h2>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>attack-path · predicted</span></div>
+    <div class="body"><div class="graph-host"></div><div class="res"></div></div>
+  </div>
+  <div class="step did" data-run="watch"><span class="lbl">What we did</span>
+    <p>UCS showed that the attacker's easiest way to the database runs through the VPN gateway, effort 8 + 1 = 9. So
+      that's where we put our closest watch and a tripwire. If they come that way, we'll see them at once.</p></div>
+  <div class="step why"><span class="lbl">Why this idea fits</span>
+    <p>An attacker inside a network is like a burglar in a building, looking for the easiest way to the safe. Search
+      goes through the possible routes in an orderly way, so we found that route before they did. We used UCS, not BFS,
+      because the moves cost different amounts of effort, and the route with the fewest steps isn't the easiest one.</p></div>
+  <div class="step remember">
+    <p class="kicker">Remember</p>
+    <ul>
+      <li>The frontier is a to-do list. The strategy decides which route comes off it next.</li>
+      <li>BFS goes wide and DFS goes deep. UCS finds the lowest cost.</li>
+      <li>A* ranks routes by f = g + h. With an admissible h it still finds the cheapest route, usually faster.</li>
+    </ul>
+  </div>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Eyes on the VPN gateway. If they go for the database, that's the way they'll come.</p></div></div>
+</section>
+
+<!-- ===================== CHAPTER 3 · 00:00 ===================== -->
+<section class="page" data-clock="00:00" data-where="Ch. 3 · Good enough, fast" data-toc="00:00|Good enough, fast">
+  <p class="kicker">00:00 · Chapter 3</p>
+  <h2>Good enough, fast</h2>
+  <div class="incident"><span class="pulse"></span>Incident · 00:05 · a slow scan is slipping past the detector</div>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>They've switched to a slow, quiet scan, and our intrusion detector isn't catching it. We need a better
+      sensitivity setting. Each test replays a chunk of traffic and takes about ten minutes, so we can't try all
+      seven.</p></div></div>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>ids-tuning.log</span></div>
+    <div class="body lines">
+      <div><span class="d">setting</span> &nbsp;0 &nbsp;1 &nbsp;2 &nbsp;3 &nbsp;4 &nbsp;5 &nbsp;6</div>
+      <div><span class="d">score &nbsp;</span> &nbsp;? &nbsp;? &nbsp;? &nbsp;? &nbsp;? &nbsp;? &nbsp;?</div>
+    </div>
+  </div>
+  <p class="step">This time the answer is a setting, not a route. Each test gives a setting a score: how well it
+    catches the scan in a replay of tonight's traffic without raising false alarms. Higher is better.</p>
+  <p class="step">For problems like this, <b>local search</b> is enough: keep one complete candidate, try small changes
+    to it (its neighbours), and score each one with an <b>objective function</b>. It's like turning a radio dial until
+    the signal is clearest, and it needs almost no memory.</p>
+</section>
+
+<section class="page" data-clock="00:00" data-where="Ch. 3 · Good enough, fast" data-init="hill">
+  <p class="kicker">00:00 · Chapter 3</p>
+  <h2>Hill climbing</h2>
+  <p>The simplest local search is <b>hill climbing</b>: move to a better neighbour, and stop when no neighbour is
+    better.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>hill-climb</span></div>
+    <div class="body">
+      <svg class="dg hill" viewBox="0 0 320 188" role="img" aria-label="Scores 1, 3, 5, 8, 6, 4, 2 for settings 0 to 6">
+        <g class="pillars"></g>
+        <circle class="climber" cx="0" cy="0" r="7"/>
+        <text class="stop" x="176" y="13">stop</text>
+      </svg>
+    </div>
+  </div>
+  <p class="step" data-run="climb">Start at setting 0, score 1. Its neighbour scores 3, so move. Then 5, then 8. Both
+    neighbours of the 8 are lower, so hill climbing stops at setting 3.</p>
+  <p class="step">It only ever looks one step around itself. That makes it fast and almost memory-free, and also
+    short-sighted.</p>
+</section>
+
+<section class="page" data-clock="00:00" data-where="Ch. 3 · Good enough, fast" data-init="land">
+  <p class="kicker">00:00 · Chapter 3</p>
+  <h2>When the hill is the wrong one</h2>
+  <p>That time the first peak was the highest one. Often it isn't.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>landscape</span></div>
+    <div class="body">
+      <svg class="dg land" viewBox="0 0 320 170" role="img" aria-label="A landscape with a small hill and a taller hill">
+        <line class="base" x1="6" y1="156" x2="314" y2="156"/>
+        <path class="curve" d="M10 150 C40 150 60 70 85 70 C110 70 125 140 150 140 C185 140 205 25 240 25 C275 25 295 110 310 130"/>
+        <circle class="cl c1" r="6" cx="-20" cy="-20"/>
+        <circle class="cl c2" r="6" cx="-20" cy="-20"/>
+        <circle class="cl c0" r="7" cx="-20" cy="-20"/>
+        <text class="tag" data-t="local" x="85" y="48">local maximum</text>
+        <text class="tag end" data-t="global" x="226" y="12">global maximum</text>
+      </svg>
+    </div>
+  </div>
+  <p class="step" data-run="stuck">A <b>local maximum</b> is better than all its neighbours but not the best overall.
+    The climber stops there for good. Flat plateaus and narrow ridges, where you'd need several moves in a row to
+    improve, stop it too.</p>
+  <p class="step">On the classic 8-queens puzzle, steepest hill climbing from a random start solves only about 14% of
+    cases and gets stuck in the other 86%, although it's quick: about 4 moves when it succeeds.</p>
+  <p class="step" data-run="restarts">One way out is <b>random restarts</b>: climb again from new random starting
+    points and keep the best result. With a 14% chance per climb, about 7 climbs are needed on average.</p>
+</section>
+
+<section class="page" data-clock="00:00" data-where="Ch. 3 · Good enough, fast" data-init="anneal">
+  <p class="kicker">00:00 · Chapter 3</p>
+  <h2>Simulated annealing</h2>
+  <p>Hill climbing never takes a step down, so the first small hill can trap it. <b>Simulated annealing</b> gets out
+    by sometimes taking a worse step on purpose.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>annealing</span></div>
+    <div class="body">
+      <svg class="dg land" viewBox="0 0 320 172" role="img" aria-label="The search steps down off the small hill and climbs the higher one while the temperature falls">
+        <path class="curve" d="M10 150 C40 150 60 70 85 70 C110 70 125 140 150 140 C185 140 205 25 240 25 C275 25 295 110 310 130"/>
+        <circle class="cl c0" r="7" cx="-20" cy="-20"/>
+        <text class="tag" data-t="down" x="150" y="162">a worse step, on purpose</text>
+        <text class="tag end" data-t="top" x="226" y="14">the higher hill</text>
+      </svg>
+      <div class="hb"><div class="hb-l">temperature</div>
+        <div class="hb-bar temp"><i class="a"></i></div>
+        <div class="hb-k"><span class="r">hot: takes worse steps</span><span class="g">cold: only better ones</span></div></div>
+    </div>
+  </div>
+  <p class="step" data-run="anneal">At first the search is "hot": it often accepts a worse step. That lets it walk
+    down off the small hill and find the higher one.</p>
+  <p class="step">Then it slowly "cools down" and accepts worse steps less and less, the big ones least of all. By the
+    end it only takes better steps, like plain hill climbing, and settles on the top it has found.</p>
+  <p class="step">The name comes from metalwork. Annealing means heating metal or glass and cooling it slowly, so its
+    atoms can settle into an orderly structure. Cool too fast, and the search, like the metal, freezes in a bad
+    spot.</p>
+  <p class="step">Local search turns up all over computing. It cracks old substitution ciphers in capture-the-flag
+    contests, shortens delivery routes by swapping stops, and, as gradient descent, trains most machine-learning
+    models.</p>
+</section>
+
+<section class="page" data-clock="00:00" data-where="Ch. 3 · Our move" data-init="dial">
+  <p class="kicker">00:00 · Our move</p>
+  <h2>Set the detector to 3</h2>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>ids · sensitivity</span></div>
+    <div class="body">
+      <svg class="dg dial" viewBox="0 0 320 108" role="img" aria-label="Settings 0 to 4 tested one at a time: the score rises to 8 at setting 3 and drops to 6 at setting 4">
+        <text class="rowlab start" x="2" y="30">score</text>
+        <text class="rowlab start" x="2" y="78">setting</text>
+        <line class="track" x1="66" y1="56" x2="306" y2="56"/>
+        <g class="ticks"></g>
+        <circle class="knob" cx="66" cy="56" r="10"/>
+        <text class="best fade" x="186" y="100">keep setting 3: best nearby</text>
+      </svg>
+      <div class="res"></div>
+    </div>
+  </div>
+  <div class="step did" data-run="dial"><span class="lbl">What we did</span>
+    <p>We tested one setting at a time, each one step up from the last. The score rose from 1 to 3 to 5 to 8. At
+      setting 4 it fell to 6, so going further only made things worse. We stopped and set the detector to 3. Five
+      tests, and at 00:56 it caught the slow scan.</p></div>
+  <div class="step why"><span class="lbl">Why this idea fits</span>
+    <p>Too low a setting misses a quiet scan. Too high a setting buries us in false alarms. The best setting is
+      somewhere in between, and every test cost ten minutes the attacker could use. Hill climbing tunes it the way you
+      tune a radio: keep turning while the sound gets clearer, and stop when it gets worse. It doesn't promise the best
+      setting there is, but it finds a good one with few tests.</p></div>
+  <div class="step remember">
+    <p class="kicker">Remember</p>
+    <ul>
+      <li>Local search keeps one candidate and improves it with small changes.</li>
+      <li>Hill climbing is fast but stops at local maxima, plateaus and ridges.</li>
+      <li>Random restarts and simulated annealing help it escape.</li>
+    </ul>
+  </div>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Setting 3, and the slow scan lights up. They're mapping the VPN gateway, just like you predicted.</p></div></div>
+</section>
+
+<!-- ===================== CHAPTER 4 · 01:00 ===================== -->
+<section class="page" data-clock="01:00" data-where="Ch. 4 · Think like the attacker" data-toc="01:00|Think like the attacker">
+  <p class="kicker">01:00 · Chapter 4</p>
+  <h2>Think like the attacker</h2>
+  <div class="incident"><span class="pulse"></span>Incident · 01:00 · attacker probing the VPN gateway</div>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>We can harden the gateway three ways, and whatever we pick, they'll answer. We need the option that holds up
+      against their best reply.</p></div></div>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>hardening.plan</span></div>
+    <div class="body kv">
+      <span class="d">option A</span><span>staff only, with a second login step</span>
+      <span class="d">option B</span><span>keep it open, watch it closely</span>
+      <span class="d">option C</span><span>move it behind another firewall</span>
+      <span class="d">score</span><span>how safe we end up, from our risk sheet: <span class="g">higher is better</span></span>
+    </div>
+  </div>
+  <p class="step">That's a game: two sides take turns, and one side's gain is the other's loss. In a <b>zero-sum
+    game</b>, one number, the <b>utility</b>, scores every ending.</p>
+  <p class="step">We are MAX and want the highest score. The attacker is MIN and wants the lowest. We move first, and
+    the attacker replies. It's like chess: before you move, you think about your opponent's best answer.</p>
+</section>
+
+<section class="page" data-clock="01:00" data-where="Ch. 4 · Think like the attacker" data-init="tree">
+  <p class="kicker">01:00 · Chapter 4</p>
+  <h2>Minimax</h2>
+  <p>All moves and replies form a <b>game tree</b>, with the score of every ending at the bottom.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>game-tree</span></div>
+    <div class="body tree-host"></div>
+  </div>
+  <p class="step" data-run="minVals">For each of our options, assume the attacker picks the reply that's worst for us:
+    min(3, 12, 8) = 3, min(2, 4, 6) = 2 and min(14, 5, 2) = 2.</p>
+  <p class="step" data-run="maxVal">Then we pick the option whose worst case is best: max(3, 2, 2) = 3. That's the
+    <b>minimax</b> value. Against an opponent who always plays their best, nothing guarantees more.</p>
+  <p class="step" data-run="tempt">The 14 looks tempting, but that branch belongs to the attacker, who would answer with
+    the 2. Minimax plans for what we can be sure of.</p>
+</section>
+
+<section class="page" data-clock="01:00" data-where="Ch. 4 · Think like the attacker" data-init="tree2">
+  <p class="kicker">01:00 · Chapter 4</p>
+  <h2>Pruning and depth limits</h2>
+  <p>Minimax looks at about b<sup>m</sup> positions, where b is the number of moves per turn and m the number of turns.
+    That grows very fast.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>alpha-beta</span></div>
+    <div class="body tree-host"></div>
+  </div>
+  <p class="step" data-run="prune"><b>Alpha-beta pruning</b> skips branches that can't change the decision. Option A
+    already guarantees 3. In option B the attacker's first reply gives 2, so B can never beat A, and its 4 and 6 are
+    never looked at. Same answer, less work: with a perfect move order, about b<sup>m/2</sup> positions.</p>
+  <p class="step">Real games are far too big to search to the end. So the search stops at a <b>depth limit</b> and
+    scores the position with an <b>evaluation function</b>, usually a weighted sum of features:
+    Eval(s) = w₁f₁(s) + … + wₙfₙ(s). Danger just past the limit stays invisible. That's the horizon effect.</p>
+</section>
+
+<section class="page" data-clock="01:00" data-where="Ch. 4 · Think like the attacker">
+  <p class="kicker">01:00 · Chapter 4</p>
+  <h2>When the other side is chance</h2>
+  <p>Minimax assumes an opponent who thinks. When the next event is random, like a disk failing, <b>expectimax</b> uses
+    chance nodes that average the outcomes, weighted by their probabilities.</p>
+  <div class="term step">
+    <div class="bar"><i></i><i></i><i></i><span>expectimax</span></div>
+    <div class="body">
+      <svg class="dg chance" viewBox="0 0 320 150" role="img" aria-label="A chance node with outcomes 8, 24 and minus 12 at probabilities one half, one third and one sixth">
+        <line class="edge" x1="160" y1="44" x2="60" y2="104"/><line class="edge" x1="160" y1="44" x2="160" y2="104"/><line class="edge" x1="160" y1="44" x2="260" y2="104"/>
+        <circle cx="160" cy="28" r="18"/><text x="160" y="28">10</text>
+        <text class="p" x="96" y="66">½</text><text class="p" x="174" y="74">⅓</text><text class="p" x="226" y="66">⅙</text>
+        <rect x="40" y="106" width="40" height="28" rx="6"/><text x="60" y="120">8</text>
+        <rect x="140" y="106" width="40" height="28" rx="6"/><text x="160" y="120">24</text>
+        <rect x="240" y="106" width="40" height="28" rx="6"/><text x="260" y="120">−12</text>
+      </svg>
+      <div class="lines" style="text-align:center">½ · 8 + ⅓ · 24 + ⅙ · (−12) = 4 + 8 − 2 = <b>10</b></div>
+    </div>
+  </div>
+  <p class="step">Plan for the worst reply against someone who plays against you, and for the average against luck.</p>
+  <p class="step">Game search made history. IBM's Deep Blue beat world chess champion Garry Kasparov in 1997, AlphaGo
+    beat Lee Sedol at Go in 2016 by combining search with learned evaluations, and checkers was solved in 2007: with
+    perfect play on both sides, it's a draw.</p>
+</section>
+
+<section class="page" data-clock="01:00" data-where="Ch. 4 · Our move" data-init="opts">
+  <p class="kicker">01:00 · Our move</p>
+  <h2>Choose the option that holds</h2>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>hardening · decision</span></div>
+    <div class="body opts">
+      <div class="opt" data-o="A"><b>A</b><span>staff only, with a second login step</span><span class="sc">best 12 · worst 3</span></div>
+      <div class="opt" data-o="B"><b>B</b><span>keep it open, watch it closely</span><span class="sc">best 6 · worst 2</span></div>
+      <div class="opt" data-o="C"><b>C</b><span>move it behind another firewall</span><span class="sc">best 14 · worst 2</span></div>
+      <div class="res"></div>
+    </div>
+  </div>
+  <div class="step did" data-run="pickA"><span class="lbl">What we did</span>
+    <p>We chose option A. Whatever the attacker tried next, we'd end up with at least 3. Option C could have scored 14,
+      but only if the attacker played badly, and its worst case was a 2.</p></div>
+  <div class="step why"><span class="lbl">Why this idea fits</span>
+    <p>The attacker is a thinking opponent who reacts to every move we make. Minimax plans for their best reply, so
+      there are no nasty surprises. If the other side were just bad luck, like a disk failing, we would plan for the
+      average with expectimax instead.</p></div>
+  <div class="step remember">
+    <p class="kicker">Remember</p>
+    <ul>
+      <li>Minimax plans for the opponent's best reply.</li>
+      <li>Alpha-beta gets the same answer with less work.</li>
+      <li>Big games need depth limits and evaluation functions. Chance needs expectimax.</li>
+    </ul>
+  </div>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Option A is live. The gateway holds. They'll try something else.</p></div></div>
+</section>
+
+<!-- ===================== CHAPTER 5 · 02:00 ===================== -->
+<section class="page" data-clock="02:00" data-where="Ch. 5 · The bot that learns" data-toc="02:00|The bot that learns">
+  <p class="kicker">02:00 · Chapter 5</p>
+  <h2>The bot that learns</h2>
+  <div class="incident"><span class="pulse"></span>Incident · 02:07 · stolen login used on laptop-14</div>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>A stolen login just showed up on laptop-14. No time to think it through by hand. Watch what the response bot
+      does.</p></div></div>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>response-bot.log</span></div>
+    <div class="body kv">
+      <span class="d">02:07:12</span><span>stolen login on laptop-14</span>
+      <span class="d">options</span><span>watch · reset password · isolate</span>
+      <span class="d">02:07:13</span><span class="cursor">choosing</span>
+    </div>
+  </div>
+  <p class="step">A stolen login can spread to other machines fast, sometimes within minutes, faster than people can
+    meet and decide. So the company lets a response bot make the first move, and people check it afterwards.</p>
+  <p class="step">Nobody wrote the bot a rule for this. It learned what to do from practice. To see how, we first need a
+    way to describe a chain of decisions where nothing is certain: the <b>Markov decision process</b>, or MDP.</p>
+</section>
+
+<section class="page" data-clock="02:00" data-where="Ch. 5 · The bot that learns" data-init="mdp">
+  <p class="kicker">02:00 · Chapter 5</p>
+  <h2>A chain of decisions</h2>
+  <p>Here is the bot's situation as an MDP. The box at the top is a <b>state</b>: a situation the bot can be in. From
+    there it can take one of three <b>actions</b>.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>laptop-14 · options</span></div>
+    <div class="body">
+      <svg class="dg mdp" viewBox="0 0 320 170" role="img" aria-label="From the state stolen login on laptop-14 the bot can watch, reset the password or isolate. Watching lets the attacker spread, a password reset usually works, isolating contains the attack">
+        <g class="st"><rect x="60" y="6" width="200" height="30" rx="8"/><text x="160" y="21">stolen login on laptop-14</text></g>
+        <g class="act"><line class="ln" x1="140" y1="36" x2="55" y2="70"/><rect x="10" y="70" width="90" height="26" rx="13"/><text x="55" y="83">watch</text></g>
+        <g class="act"><line class="ln" x1="160" y1="36" x2="160" y2="70"/><rect x="105" y="70" width="110" height="26" rx="13"/><text x="160" y="83">reset password</text></g>
+        <g class="act"><line class="ln" x1="180" y1="36" x2="265" y2="70"/><rect x="220" y="70" width="90" height="26" rx="13"/><text x="265" y="83">isolate</text></g>
+        <g class="out bad fade"><line class="ln" x1="55" y1="96" x2="55" y2="120"/><rect x="5" y="120" width="100" height="44" rx="8"/><text x="55" y="135">attacker</text><text x="55" y="151">spreads</text></g>
+        <g class="out fade"><line class="ln" x1="160" y1="96" x2="160" y2="120"/><rect x="110" y="120" width="100" height="44" rx="8"/><text x="160" y="135">usually works,</text><text x="160" y="151">not always</text></g>
+        <g class="out good fade"><line class="ln" x1="265" y1="96" x2="265" y2="120"/><rect x="215" y="120" width="100" height="44" rx="8"/><text x="265" y="135">contained,</text><text x="265" y="151">some work</text></g>
+      </svg>
+    </div>
+  </div>
+  <p class="step" data-run="mdp">Results aren't certain. A password reset usually locks the attacker out, but if they
+    have already moved on, it's too late. And the attacker gets a move too.</p>
+  <p class="step">Every step earns a <b>reward</b>, a score that can be negative. Each minute the attacker is inside
+    costs a little, and containing them is worth a lot. A <b>discount factor</b> makes sooner rewards count a bit more
+    than later ones.</p>
+  <p class="step">The answer to an MDP isn't one plan. It's a <b>policy</b>: what to do in every state. When something
+    doesn't go to plan, the policy already says what to do next.</p>
+  <p class="step">How good is a state? Its <b>value</b> is all the reward you can expect from it if you act well. The
+    <b>Bellman equation</b> says it in one line: value = reward now + the discounted value of where you end up. That's
+    why a state can pay nothing by itself and still be worth a lot.</p>
+</section>
+
+<section class="page" data-clock="02:00" data-where="Ch. 5 · The bot that learns" data-init="learn">
+  <p class="kicker">02:00 · Chapter 5</p>
+  <h2>How the bot learned</h2>
+  <p>Nobody handed the bot the odds and rewards of every move. It learned them by <b>reinforcement learning</b>:
+    practising on thousands of simulated incidents, the way a new colleague learns from experience.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>bot · learned scores</span></div>
+    <div class="body">
+      <div class="qb"><span>watch</span><span class="qbar"><i></i></span></div>
+      <div class="qb"><span>reset password</span><span class="qbar"><i></i></span></div>
+      <div class="qb"><span>isolate</span><span class="qbar"><i></i></span></div>
+      <div class="res"></div>
+    </div>
+  </div>
+  <p class="step" data-run="learn">Each round it tries an action, sees what happens, and nudges its score for that
+    action up or down. Early on the scores are guesses: in one round, watching looked fine because the attacker was
+    slow. After many rounds they settle, and isolating comes out on top.</p>
+  <p class="step">These scores are called Q-values: how good an action is in a state, counting everything that tends to
+    follow. Updating them after every try is <b>Q-learning</b>, and the <b>learning rate</b> sets how big each nudge
+    is.</p>
+  <p class="step">To find better moves, the bot sometimes tries a random action instead of its favourite. That's
+    <b>ε-greedy</b> exploration: mostly do what works, and now and then try something new.</p>
+  <p class="step">In 2015, DeepMind's deep Q-network learned dozens of Atari games from the screen pixels alone. The
+    field also has a warning: a bot chases the reward it's given, not the one you meant. Reward it only for a quiet
+    alert screen, and it may learn to switch the alerts off.</p>
+</section>
+
+<section class="page" data-clock="02:00" data-where="Ch. 5 · Our move" data-init="lan">
+  <p class="kicker">02:00 · Our move</p>
+  <h2>Isolate laptop-14</h2>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>network · 02:07</span></div>
+    <div class="body">
+      <svg class="dg lan" viewBox="0 0 320 176" role="img" aria-label="The response bot cuts laptop-14 off from the network">
+        <line class="link" x1="160" y1="40" x2="160" y2="70"/>
+        <line class="link l14" x1="160" y1="84" x2="40" y2="128"/>
+        <line class="link" x1="160" y1="84" x2="120" y2="128"/>
+        <line class="link" x1="160" y1="84" x2="200" y2="128"/>
+        <line class="link" x1="160" y1="84" x2="280" y2="128"/>
+        <g class="botbox"><rect x="100" y="6" width="120" height="32" rx="10"/><text x="160" y="22">response bot</text></g>
+        <g class="sw"><circle cx="160" cy="77" r="9"/></g>
+        <g class="dev l14"><rect x="5" y="128" width="70" height="30" rx="8"/><text x="40" y="143">laptop-14</text></g>
+        <g class="dev"><rect x="85" y="128" width="70" height="30" rx="8"/><text x="120" y="143">laptop-15</text></g>
+        <g class="dev"><rect x="165" y="128" width="70" height="30" rx="8"/><text x="200" y="143">server</text></g>
+        <g class="dev"><rect x="245" y="128" width="70" height="30" rx="8"/><text x="280" y="143">printer</text></g>
+        <text class="x fade" x="100" y="106">✕</text>
+        <text class="iso fade" x="40" y="167">ISOLATED</text>
+      </svg>
+      <div class="res"></div>
+    </div>
+  </div>
+  <div class="step did" data-run="isolate"><span class="lbl">What we did</span>
+    <p>The bot cut laptop-14 off from the network within seconds. We checked its choice, kept it, and reset the stolen
+      password.</p></div>
+  <div class="step why"><span class="lbl">Why this idea fits</span>
+    <p>Nobody can write a rule for every kind of incident. The bot practised on many simulated incidents and learned
+      which action pays off in the long run, not just right now. Isolating a laptop costs a little work today. A stolen
+      login spreading through the network would cost far more.</p></div>
+  <div class="step remember">
+    <p class="kicker">Remember</p>
+    <ul>
+      <li>An MDP describes a chain of decisions with uncertain results. Its answer is a policy.</li>
+      <li>A state's value is the reward now plus the discounted value of what comes next.</li>
+      <li>Q-learning learns the value of each action by trying, and ε-greedy keeps it exploring.</li>
+    </ul>
+  </div>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Laptop-14 is cut off. The bot was faster than either of us.</p></div></div>
+</section>
+
+<!-- ===================== CHAPTER 6 · 03:00 ===================== -->
+<section class="page" data-clock="03:00" data-where="Ch. 6 · A thousand alerts" data-toc="03:00|A thousand alerts">
+  <p class="kicker">03:00 · Chapter 6</p>
+  <h2>A thousand alerts</h2>
+  <div class="incident"><span class="pulse"></span>Incident · 03:00 · 1,085 alerts in the queue</div>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>They're flooding us with noise to hide in it. Over a thousand alerts, and we can't read them all. Which ones are
+      real?</p></div></div>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>alert queue</span></div>
+    <div class="body kv">
+      <span class="d">events</span><span>10,000 tonight</span>
+      <span class="d">alerts</span><span class="r">1,085</span>
+      <span class="d">real</span><span>?</span>
+    </div>
+  </div>
+  <p class="step">An alert is a clue, not proof. Some alerts are attacks. Many are normal work that just looks odd.
+    <b>Probability</b> is how we measure how much a clue should change our mind.</p>
+  <p class="step">The tool for that is <b>Bayes' rule</b>. As a formula it looks like maths, but the idea is simple, and
+    the easiest way to see it is to count.</p>
+</section>
+
+<section class="page" data-clock="03:00" data-where="Ch. 6 · A thousand alerts" data-init="freq">
+  <p class="kicker">03:00 · Chapter 6</p>
+  <h2>Count, don't calculate</h2>
+  <p>Our detector is good: it catches 95 of every 100 attacks. But it also flags about 1 in 10 normal events by
+    mistake. And real attacks are rare: about 1 event in 100.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>10,000 events</span></div>
+    <div class="body">
+      <svg class="dg freq" viewBox="0 0 320 226" role="img" aria-label="10,000 events: 100 attacks and 9,900 normal events. 95 attacks and 990 normal events raise alerts: 1,085 alerts, 95 of them real">
+        <g><rect class="nd" x="95" y="4" width="130" height="30" rx="8"/><text x="160" y="19">10,000 events</text></g>
+        <g class="fade f1">
+          <line class="ln" x1="140" y1="34" x2="80" y2="70"/><line class="ln" x1="180" y1="34" x2="240" y2="70"/>
+          <rect class="nd atk" x="20" y="70" width="120" height="30" rx="8"/><text x="80" y="85">100 attacks</text>
+          <rect class="nd" x="180" y="70" width="120" height="30" rx="8"/><text x="240" y="85">9,900 normal</text>
+        </g>
+        <g class="fade f2">
+          <line class="ln" x1="80" y1="100" x2="80" y2="136"/><line class="ln" x1="240" y1="100" x2="240" y2="136"/>
+          <text class="sm start" x="88" y="112">95 in 100</text><text class="sm start" x="88" y="125">caught</text>
+          <text class="sm end" x="232" y="112">1 in 10</text><text class="sm end" x="232" y="125">flagged</text>
+          <rect class="nd atk" x="20" y="136" width="120" height="30" rx="8"/><text x="80" y="151">95 alerts</text>
+          <rect class="nd" x="180" y="136" width="120" height="30" rx="8"/><text x="240" y="151">990 alerts</text>
+        </g>
+        <g class="fade f3">
+          <line class="ln" x1="80" y1="166" x2="140" y2="192"/><line class="ln" x1="240" y1="166" x2="180" y2="192"/>
+          <rect class="nd sum" x="50" y="192" width="220" height="30" rx="8"/><text x="160" y="207">1,085 alerts · 95 real</text>
+        </g>
+      </svg>
+      <div class="res"></div>
+    </div>
+  </div>
+  <p class="step" data-run="freq">Picture 10,000 events. About 100 are attacks, and the detector flags 95 of them. The
+    other 9,900 are normal, and 1 in 10 of those gets flagged too: 990 false alarms.</p>
+  <p class="step">So of 1,085 alerts, only 95 are real: fewer than 1 in 10. The detector isn't bad. Attacks are just
+    rare, and the false alarms come from a much bigger pile.</p>
+  <p class="step">That is Bayes' rule at work. Start from how common something is: the <b>prior</b>. Weigh the clue: how
+    much more often it shows up during an attack than during normal work, the <b>likelihood</b>. The result is your
+    updated belief: the <b>posterior</b>.</p>
+  <p class="step">This <b>base rate</b> effect is one of the main reasons intrusion detection is hard. Doctors meet it
+    too: a good test for a rare illness still gives many false alarms.</p>
+</section>
+
+<section class="page" data-clock="03:00" data-where="Ch. 6 · A thousand alerts" data-init="bn">
+  <p class="kicker">03:00 · Chapter 6</p>
+  <h2>Explaining away</h2>
+  <p>A <b>Bayesian network</b> draws beliefs as a map. Arrows run from causes to effects, and each arrow carries a small
+    table of how likely the effect is for each cause. That lets a computer combine many clues at once.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>one alert · two possible causes</span></div>
+    <div class="body">
+      <svg class="dg bn" viewBox="0 0 320 182" role="img" aria-label="An attacker or the nightly backup could cause a big data transfer. Once the backup is confirmed, an attacker becomes unlikely again">
+        <line class="ln" x1="70" y1="78" x2="140" y2="126"/><line class="ln" x1="250" y1="78" x2="180" y2="126"/>
+        <g class="nd" data-n="atk"><rect x="10" y="10" width="120" height="30" rx="8"/><text x="70" y="25">attacker</text></g>
+        <g class="nd" data-n="bak"><rect x="185" y="10" width="130" height="30" rx="8"/><text x="250" y="25">nightly backup</text></g>
+        <rect class="belt" x="10" y="47" width="120" height="7" rx="3"/><rect class="bel atk" data-b="atk" x="10" y="47" width="120" height="7" rx="3"/>
+        <rect class="belt" x="185" y="47" width="130" height="7" rx="3"/><rect class="bel" data-b="bak" x="185" y="47" width="130" height="7" rx="3"/>
+        <text class="bl" data-l="atk" x="70" y="67">unlikely</text>
+        <text class="bl" data-l="bak" x="250" y="67">possible</text>
+        <g class="nd" data-n="eff"><rect x="85" y="126" width="150" height="30" rx="8"/><text x="160" y="141">big data transfer</text></g>
+        <text class="bl fade" data-f="seen" x="160" y="172">seen at 03:00</text>
+      </svg>
+    </div>
+  </div>
+  <p class="step" data-run="seen">We see a big data transfer at 03:00. Both causes become more likely: maybe an attacker
+    is copying data, maybe it's the backup.</p>
+  <p class="step" data-run="explain">Then we check the schedule: the nightly backup was running. That already explains
+    the transfer, so an attacker becomes unlikely again. This is <b>explaining away</b>.</p>
+  <p class="step">That's how hundreds of alerts sank down our list: each one already had an innocent cause. Spam filters
+    use Bayes' rule in a similar way, weighing the words in an email.</p>
+</section>
+
+<section class="page" data-clock="03:00" data-where="Ch. 6 · Our move" data-init="funnel">
+  <p class="kicker">03:00 · Our move</p>
+  <h2>Read the right alerts first</h2>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>alert queue · ranked</span></div>
+    <div class="body">
+      <div class="hb"><div class="hb-l">all alerts</div>
+        <div class="hb-bar"><i class="n" style="--w:100%"></i></div><div class="hb-k"><span>1,085</span></div></div>
+      <div class="hb"><div class="hb-l">expected to be real</div>
+        <div class="hb-bar"><i class="a" style="--w:8.76%"></i></div><div class="hb-k"><span class="r">about 95 of 1,085</span></div></div>
+      <div class="topitem"><span class="r">#1</span> &nbsp;db-02 → unknown address, 03:12</div>
+    </div>
+  </div>
+  <div class="step did" data-run="funnel"><span class="lbl">What we did</span>
+    <p>Instead of reading 1,085 alerts in order, we ranked them by how likely each one was to be real. Alerts explained
+      by the nightly backup job sank to the bottom. At the top: traffic from db-02 to an unknown address.</p></div>
+  <div class="step why"><span class="lbl">Why this idea fits</span>
+    <p>An alert is a clue, not proof. Counting showed that most alerts are false alarms, simply because real attacks
+      are rare. Explaining away pushed down every alert that already had an innocent cause, like the backup job. What
+      stayed on top had no innocent explanation at all. That turned an impossible pile into a short list.</p></div>
+  <div class="step remember">
+    <p class="kicker">Remember</p>
+    <ul>
+      <li>Start from the base rate. Rare events stay rare, even after a good clue.</li>
+      <li>Bayes' rule: begin with how common something is, then update with the evidence.</li>
+      <li>In a Bayesian network, one confirmed cause can explain another away.</li>
+    </ul>
+  </div>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Top of the list: db-02. That's where they are.</p></div></div>
+</section>
+
+<!-- ===================== CHAPTER 7 · 04:00 ===================== -->
+<section class="page" data-clock="04:00" data-where="Ch. 7 · Is it infected?" data-toc="04:00|Is it infected?">
+  <p class="kicker">04:00 · Chapter 7</p>
+  <h2>Is it infected?</h2>
+  <div class="incident"><span class="pulse"></span>Incident · 04:00 · db-02 running hot</div>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>db-02 has been running hot for an hour. Are they on it? If we log in to check, we tip them off. All we have are
+      its CPU readings.</p></div></div>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>db-02.cpu</span></div>
+    <div class="body kv">
+      <span class="d">03:00</span><span class="r">HIGH</span>
+      <span class="d">04:00</span><span class="r">HIGH</span>
+      <span class="d">state</span><span>? hidden</span>
+    </div>
+  </div>
+  <p class="step">Why would the CPU tell us anything? An attacker's tools, copying data or cracking passwords, keep a
+    server busy. But so do backups and night reports, so one busy hour proves nothing. It's like guessing whether
+    someone is home from the lights in their window.</p>
+  <p class="step">The true state, clean or compromised, is hidden. All we get are noisy readings. That's a <b>hidden
+    Markov model</b>, or HMM. It needs three things: the starting probabilities, the <b>transition probabilities</b>
+    (how the hidden state changes from one reading to the next) and the <b>emission probabilities</b> (how likely each
+    reading is in each state).</p>
+</section>
+
+<section class="page" data-clock="04:00" data-where="Ch. 7 · Is it infected?">
+  <p class="kicker">04:00 · Chapter 7</p>
+  <h2>The model</h2>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>hmm</span></div>
+    <div class="body">
+      <svg class="dg hmm" viewBox="0 0 340 186" role="img" aria-label="Two hidden states, clean and compromised, with transition and emission probabilities">
+        <defs><marker id="arr7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <path class="tr" d="M132 52 Q 170 28 208 52" marker-end="url(#arr7)"/>
+        <path class="tr" d="M208 88 Q 170 112 132 88" marker-end="url(#arr7)"/>
+        <path class="tr" d="M70 40 C 46 4, 14 50, 56 72" marker-end="url(#arr7)"/>
+        <path class="tr" d="M270 40 C 294 4, 326 50, 284 72" marker-end="url(#arr7)"/>
+        <circle class="st c" cx="96" cy="70" r="40"/><text x="96" y="70">CLEAN</text>
+        <circle class="st x" cx="244" cy="70" r="40"/><text x="244" y="70" style="font-size:9.5px">COMPROMISED</text>
+        <text class="p" x="170" y="28">0.1</text><text class="p" x="170" y="114">0.2</text>
+        <text class="p" x="22" y="22">0.9</text><text class="p" x="318" y="22">0.8</text>
+        <text class="em" x="170" y="148">P(HIGH | clean) = 0.2</text>
+        <text class="em" x="170" y="168">P(HIGH | compromised) = 0.7</text>
+      </svg>
+    </div>
+  </div>
+  <p class="step">The arrows are the transitions, from one hourly reading to the next. A clean server stays clean with
+    0.9 and gets broken into with 0.1. A compromised one is cleaned up by our tools with 0.2 and stays compromised with
+    0.8. The Markov assumption says the next state depends only on the current one.</p>
+  <p class="step">The lines at the bottom are the emissions. Night jobs make a clean server read HIGH in 2 hours out of
+    10. An attacker's tools make a compromised one read HIGH in 7 out of 10. Careful: that 0.7 is the chance of HIGH
+    given compromised, not the chance of compromised given HIGH. To turn it around, we need Bayes again.</p>
+</section>
+
+<section class="page" data-clock="04:00" data-where="Ch. 7 · Is it infected?" data-init="filter">
+  <p class="kicker">04:00 · Chapter 7</p>
+  <h2>Filtering</h2>
+  <p><b>Filtering</b> keeps a running guess about the hidden state. With every reading it does four things: predict
+    (the state may have changed since the last hour), observe (read the CPU), correct (favour the state that explains
+    the reading better) and normalize (rescale so the chances add up to 100%).</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>db-02 · belief</span></div>
+    <div class="body">
+      <div class="cols">
+        <div class="col" data-c="0"><div class="pair"><i class="cl"></i><i class="cp"></i></div><span class="v"></span><span class="t">start</span></div>
+        <div class="col" data-c="1"><div class="pair"><i class="cl"></i><i class="cp"></i></div><span class="v"></span><span class="t">high</span></div>
+        <div class="col" data-c="2"><div class="pair"><i class="cl"></i><i class="cp"></i></div><span class="v"></span><span class="t">high</span></div>
+        <div class="col" data-c="3"><div class="pair"><i class="cl"></i><i class="cp"></i></div><span class="v"></span><span class="t">no reading</span></div>
+      </div>
+      <div class="legend"><span class="g">■ clean</span><span class="r">■ compromised</span></div>
+    </div>
+  </div>
+  <p class="step" data-run="f1">Start: 0.8 clean, 0.2 compromised. The first reading is HIGH, so multiply by how likely
+    HIGH is in each state, 0.8 × 0.2 = 0.16 and 0.2 × 0.7 = 0.14, then normalize: [0.533, 0.467].</p>
+  <p class="step" data-run="f2">Predict one step with the transitions, then correct with the second HIGH:
+    [0.277, 0.723]. db-02 is now probably compromised.</p>
+  <p class="step" data-run="f3">No new reading? Then we can only predict: one step later it's [0.394, 0.606]. Without
+    evidence, the belief drifts back.</p>
+  <p class="step">That's what we did all night with db-02: every hour, a new reading and an updated guess. Navigation
+    apps use the same idea to track a car from noisy GPS fixes.</p>
+</section>
+
+<section class="page" data-clock="04:00" data-where="Ch. 7 · Is it infected?" data-init="viterbi">
+  <p class="kicker">04:00 · Chapter 7</p>
+  <h2>Looking back</h2>
+  <p><b>Smoothing</b> uses later readings to revise earlier states, the way a detective rereads early clues after
+    learning more. After HIGH, HIGH, the chance that db-02 was already compromised at the first reading rises from
+    about 47% to about 68%.</p>
+  <div class="term step" data-run="viterbi">
+    <div class="bar"><i></i><i></i><i></i><span>viterbi · readings HIGH, HIGH</span></div>
+    <div class="body">
+      <div class="vrow"><span>clean → clean</span><span>0.0288</span></div>
+      <div class="vrow"><span>clean → compromised</span><span>0.0112</span></div>
+      <div class="vrow"><span>compromised → clean</span><span>0.0056</span></div>
+      <div class="vrow" data-best><span>compromised → compromised</span><span>0.0784</span></div>
+    </div>
+  </div>
+  <p class="step">The <b>Viterbi algorithm</b> finds the single most likely story: the sequence of hidden states that
+    best explains all the readings. It works like filtering, but keeps only the best path into each state and then
+    traces it back. Here the story is compromised, then compromised: the attacker was probably on db-02 before our
+    first reading. That tells the investigators where to start looking.</p>
+  <p class="step">HMMs watch over machines, were the backbone of speech recognition for decades, and help robots work
+    out where they are from noisy sensors.</p>
+</section>
+
+<section class="page" data-clock="04:00" data-where="Ch. 7 · Our move" data-init="gauge">
+  <p class="kicker">04:00 · Our move</p>
+  <h2>Flag db-02</h2>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>db-02 · P(compromised)</span></div>
+    <div class="body">
+      <svg class="dg gauge" viewBox="0 0 320 200" role="img" aria-label="A gauge showing the chance that db-02 is compromised rising to 72 percent">
+        <path class="arc" d="M60 130 A100 100 0 0 1 260 130"/>
+        <path class="arc hot" d="M160 30 A100 100 0 0 1 260 130"/>
+        <text class="tk" x="60" y="152">0%</text><text class="tk" x="160" y="11">50%</text><text class="tk" x="260" y="152">100%</text>
+        <line class="needle" x1="160" y1="130" x2="76" y2="130"/>
+        <circle class="hub" cx="160" cy="130" r="6"/>
+        <text class="pct" x="160" y="164">20%</text>
+        <text class="cap" x="160" y="190">before any reading</text>
+      </svg>
+    </div>
+  </div>
+  <div class="step did" data-run="gauge"><span class="lbl">What we did</span>
+    <p>After two HIGH readings, our belief that db-02 was compromised went from 20% to 47% to 72%. We flagged it as
+      probably compromised and got ready to cut it off.</p></div>
+  <div class="step why"><span class="lbl">Why this idea fits</span>
+    <p>We couldn't look inside the server without tipping them off, only at its readings, and one busy hour can be a
+      backup. An HMM keeps a running guess about the hidden state and updates it with every clue, so two busy hours in a
+      row added up to strong evidence.</p></div>
+  <div class="step remember">
+    <p class="kicker">Remember</p>
+    <ul>
+      <li>An HMM is a hidden state that changes, plus noisy readings that depend on it.</li>
+      <li>Filtering repeats predict, observe, correct and normalize with every reading.</li>
+      <li>Viterbi finds the most likely story. Smoothing revises the past.</li>
+    </ul>
+  </div>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>72%. We don't need more data. We need a decision.</p></div></div>
+</section>
+
+<!-- ===================== CHAPTER 8 · 05:00 ===================== -->
+<section class="page" data-clock="05:00" data-where="Ch. 8 · Pull the plug?" data-toc="05:00|Pull the plug?">
+  <p class="kicker">05:00 · Chapter 8</p>
+  <h2>Pull the plug?</h2>
+  <div class="incident"><span class="pulse"></span>Incident · 05:00 · decision needed on db-02</div>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>The filter says 72%, and the malware scanner just flagged a file on db-02. Do we take a payments database
+      offline at 5 a.m.? That's not a prediction anymore. It's a decision.</p></div></div>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>db-02.status</span></div>
+    <div class="body kv">
+      <span class="d">compromised</span><span class="r">P = 0.72</span>
+      <span class="d">malware</span><span class="r">score 0.88</span>
+      <span class="d">options</span><span>keep running · take offline</span>
+    </div>
+  </div>
+  <p class="step">Machine learning gives us predictions. Decision theory tells us what to do with them. We need both.</p>
+</section>
+
+<section class="page" data-clock="05:00" data-where="Ch. 8 · Pull the plug?" data-init="sig">
+  <p class="kicker">05:00 · Chapter 8</p>
+  <h2>Where the malware score comes from</h2>
+  <p>Machine learning learns rules from data. Supervised learning learns from labelled examples, unsupervised learning
+    finds structure without labels, and reinforcement learning learns from rewards, like the response bot. Predicting a
+    number is regression; predicting a class is classification.</p>
+  <div class="step" data-run="sigmoid">
+    <p>The scanner is a <b>classifier</b> built with <b>logistic regression</b>: it weighs the file's features, adds them
+      up, z = wᵀx + b, and turns z into a probability with the sigmoid, σ(z) = 1 / (1 + e<sup>−z</sup>).</p>
+    <div class="term">
+      <div class="bar"><i></i><i></i><i></i><span>sigmoid</span></div>
+      <div class="body">
+        <svg class="dg sig" viewBox="0 0 330 200" role="img" aria-label="The sigmoid curve rising from 0 to 1">
+          <line class="axis" x1="28" y1="172" x2="312" y2="172"/><line class="axis" x1="170" y1="24" x2="170" y2="172"/>
+          <path class="curve" d=""/>
+          <text class="tick" x="304" y="186">z</text><text class="tick start" x="176" y="20">σ(z)</text>
+          <text class="tick" x="123" y="186">−2</text><text class="tick" x="170" y="186">0</text><text class="tick" x="217" y="186">2</text>
+          <g class="pt fade" data-z="-2"><circle r="5"/><text class="start">0.119</text></g>
+          <g class="pt fade" data-z="0"><circle r="5"/><text class="end">0.5</text></g>
+          <g class="pt fade" data-z="2"><circle r="5"/><text class="end">0.881</text></g>
+          <g class="file fade"><circle r="6"/><text class="start">our file: 0.88</text></g>
+          <g class="thr fade"><line x1="28" x2="312"/><text class="start" x="34">flag from 0.2</text></g>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <p class="step" data-run="sfile">σ(−2) ≈ 0.119, σ(0) = 0.5 and σ(2) ≈ 0.881. The file on db-02 scored z = 2, so its
+    malware score is 0.88.</p>
+  <p class="step" data-run="threshold">A <b>decision threshold</b> turns the probability into yes or no, and it's a
+    policy, not a law of nature. When a missed threat is expensive, you might flag files from 0.2 upward.</p>
+</section>
+
+<section class="page" data-clock="05:00" data-where="Ch. 8 · Pull the plug?" data-init="files">
+  <p class="kicker">05:00 · Chapter 8</p>
+  <h2>Accuracy can lie</h2>
+  <p>Say 2 of every 100 files are malicious.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>100 files</span></div>
+    <div class="body"><div class="files"></div><div class="res"></div></div>
+  </div>
+  <p class="step" data-run="files">These two red squares are the real threats.</p>
+  <p class="step" data-run="always">A model that always says "clean" is right 98 times out of 100. Its accuracy is 98%,
+    and it catches nothing.</p>
+  <p class="step">That's why we look beyond accuracy, (TP + TN) / N. <b>Recall</b> = TP / (TP + FN) says how many real
+    threats were caught. <b>Precision</b> = TP / (TP + FP) says how many alarms were real. F1 balances the two.</p>
+  <p class="step">Other classic models: a <b>decision tree</b> asks if-then questions about the features (easy to read,
+    but it can <b>overfit</b>, learning the noise in its data), a random forest lets many trees vote, and K-means groups
+    data without labels. The usual traps are overfitting, leakage (the answer sneaking into the training data) and a
+    world that changes after training.</p>
+</section>
+
+<section class="page" data-clock="05:00" data-where="Ch. 8 · Pull the plug?" data-init="eu">
+  <p class="kicker">05:00 · Chapter 8</p>
+  <h2>Maximum expected utility</h2>
+  <p>A rational agent picks the action with the highest <b>expected utility</b>: EU(a) = Σ P(o | a) · U(o). That's the
+    rule of <b>maximum expected utility</b>, the way you'd weigh odds and costs before deciding to take an umbrella.</p>
+  <div class="term step" data-run="eu">
+    <div class="bar"><i></i><i></i><i></i><span>expected-utility</span></div>
+    <div class="body">
+      <div class="hb"><div class="hb-l">Project A · 0.9·100 + 0.1·(−20)</div>
+        <div class="hb-bar"><i class="n" style="--w:88%"></i></div><div class="hb-k"><span>EU = 88</span></div></div>
+      <div class="hb"><div class="hb-l">Project B · 0.6·200 + 0.4·(−50)</div>
+        <div class="hb-bar"><i class="b" style="--w:100%"></i></div><div class="hb-k"><span class="g">EU = 100 → choose B</span></div></div>
+    </div>
+  </div>
+  <p class="step">B fails more often and is still the better bet. A decision is judged by what you knew when you made
+    it, not by how it turned out.</p>
+  <p class="step">The same idea gives a simple rule for acting on a risk: act when the probability of the bad outcome is
+    higher than the cost of acting divided by the cost of the bad outcome. With $2,000 of downtime against a $10,000
+    breach, that's 2,000 / 10,000 = 20%. Or the other way round: at a 15% risk of a $20,000 breach, the expected loss
+    is 0.15 × 20,000 = $3,000, more than $2,000, so you act.</p>
+</section>
+
+<section class="page" data-clock="05:00" data-where="Ch. 8 · Our move" data-init="unplug">
+  <p class="kicker">05:00 · Our move</p>
+  <h2>Pull the plug</h2>
+  <div class="term swc">
+    <div class="bar"><i></i><i></i><i></i><span>db-02 · decision</span></div>
+    <div class="body">
+      <div class="sw-row"><span class="sw-name">db-02</span><span class="sw"><i></i></span><span class="sw-state">ONLINE</span></div>
+      <div class="hb"><div class="hb-l">keep running · 0.72 × $10,000 breach</div>
+        <div class="hb-bar"><i class="a" style="--w:72%"></i></div><div class="hb-k"><span class="r">expected loss $7,200</span></div></div>
+      <div class="hb"><div class="hb-l">take offline · downtime</div>
+        <div class="hb-bar"><i class="b" style="--w:20%"></i></div><div class="hb-k"><span class="g">cost $2,000 → cheaper</span></div></div>
+    </div>
+  </div>
+  <div class="step did" data-run="unplug"><span class="lbl">What we did</span>
+    <p>We took db-02 offline. Keeping it running meant a 72% chance of a $10,000 breach, an expected loss of $7,200.
+      Taking it offline cost $2,000 of downtime, so that was the cheaper choice. Put another way, 72% is far above the
+      20% threshold. And it cut the attacker off from the payments data.</p></div>
+  <div class="step why"><span class="lbl">Why this idea fits</span>
+    <p>A prediction alone doesn't tell you what to do. Expected utility weighs how likely each outcome is against what it
+      would cost, so the decision depends on both the odds and the stakes. A small chance of a huge loss can be worth
+      acting on. Here the chance wasn't even small.</p></div>
+  <div class="step remember">
+    <p class="kicker">Remember</p>
+    <ul>
+      <li>A classifier predicts. A decision weighs the prediction against costs.</li>
+      <li>Accuracy alone can hide a useless model. Check precision and recall.</li>
+      <li>Choose the action with the maximum expected utility.</li>
+    </ul>
+  </div>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>db-02 is offline. They've lost their foothold.</p></div></div>
+</section>
+
+<!-- ===================== 06:00 · INCIDENT REPORT ===================== -->
+<section class="page" data-clock="06:00" data-where="Incident report" data-toc="06:00|Incident report">
+  <p class="kicker">06:00 · Incident report</p>
+  <h2>Attack contained</h2>
+  <div class="incident closed"><span class="pulse"></span>Incident closed · 06:00</div>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>That's the night. Here's how we stopped them, hour by hour.</p></div></div>
+  <div class="step">
+    <ol class="report stagger">
+      <li style="--i:0"><span>22:00</span><span>A blocked address got in. <em>Agents:</em> we fixed the firewall's rule order.</span></li>
+      <li style="--i:1"><span>23:00</span><span>They reached the web server. <em>Search:</em> we found their cheapest route and watched the VPN gateway.</span></li>
+      <li style="--i:2"><span>00:00</span><span>A slow scan slipped past. <em>Local search:</em> we tuned the detector to setting 3.</span></li>
+      <li style="--i:3"><span>01:00</span><span>They probed the gateway. <em>Minimax:</em> we chose the option that holds against their best reply.</span></li>
+      <li style="--i:4"><span>02:00</span><span>A stolen login on laptop-14. <em>Q-learning:</em> the response bot isolated it.</span></li>
+      <li style="--i:5"><span>03:00</span><span>1,085 alerts of noise. <em>Bayes:</em> we read the likely real ones first.</span></li>
+      <li style="--i:6"><span>04:00</span><span>db-02 ran hot. <em>HMM:</em> we tracked its hidden state to 72% compromised.</span></li>
+      <li style="--i:7"><span>05:00</span><span>Time to decide. <em>Expected utility:</em> we took db-02 offline.</span></li>
+    </ol>
+  </div>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>We stopped them. Before you go home, let's find out who they are.</p></div></div>
+</section>
+
+<!-- ===================== EPILOGUE ===================== -->
+<section class="page" data-clock="06:30" data-where="Epilogue · Who were they?" data-toc="06:30|Epilogue: who were they?">
+  <p class="kicker">06:30 · Epilogue</p>
+  <h2>Retracing their steps</h2>
+  <div class="msg"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Every alert we ranked and every reading we tracked is a clue now. Let's put their night back together.</p></div></div>
+  <div class="term step">
+    <div class="bar"><i></i><i></i><i></i><span>attacker · timeline</span></div>
+    <div class="body">
+      <ol class="trail stagger">
+        <li style="--i:0"><span class="t">22:04</span><span>in through the firewall</span><span class="tag">door shut</span></li>
+        <li style="--i:1"><span class="t">23:10</span><span>on the web server</span><span></span></li>
+        <li style="--i:2"><span class="t">00:05</span><span>quiet scan of the network</span><span class="tag">caught</span></li>
+        <li style="--i:3"><span class="t">01:00</span><span>tried the VPN gateway</span><span class="tag">held</span></li>
+        <li style="--i:4" class="new"><span class="t">02:06</span><span>logged in to db-02 with a stolen password</span><span class="tag new">found now</span></li>
+        <li style="--i:5"><span class="t">02:07</span><span>same password on laptop-14</span><span class="tag">isolated</span></li>
+        <li style="--i:6"><span class="t">05:00</span><span>db-02 goes offline</span><span class="tag">cut off</span></li>
+      </ol>
+    </div>
+  </div>
+  <p class="step">The logs confirm what the HMM suggested: they were on db-02 well before our first reading. The login at
+    02:06 looked like normal work, so nothing raised an alarm.</p>
+  <p class="step">Two questions are left. Where did they get the password? And who are they?</p>
+</section>
+
+<section class="page" data-clock="07:00" data-where="Epilogue · Who were they?" data-init="phish">
+  <p class="kicker">07:00 · Epilogue</p>
+  <h2>The stolen password</h2>
+  <p>The password belonged to someone in accounting. A week ago, this email landed in their inbox.</p>
+  <div class="mail">
+    <div class="mrow"><span class="mk">From</span><span>IT Support &lt;<mark>it-support@helpdesk-login.example</mark>&gt;</span></div>
+    <div class="mrow"><span class="mk">Subject</span><span><mark>Your password expires in 2 hours</mark></span></div>
+    <p>Hi, your password is about to expire. To keep your access, confirm it here:</p>
+    <p><mark class="link">helpdesk-login.example/reset</mark></p>
+    <p class="sig-line">IT Support Team</p>
+  </div>
+  <p class="step" data-run="phish">Three warning signs: the address isn't ours, the deadline is there to rush you, and
+    the link leads to a copy of our login page. Whatever you type there goes straight to the attackers.</p>
+  <p class="step">Our mail filter, a classifier like the malware scanner, gave this email a borderline score and let it
+    through. Now it learns from this example, so lookalike emails land in quarantine.</p>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>So that's how they got in. Now, who are they?</p></div></div>
+</section>
+
+<section class="page" data-clock="07:30" data-where="Epilogue · Who were they?" data-init="slipup">
+  <p class="kicker">07:30 · Epilogue</p>
+  <h2>The slip-up</h2>
+  <p>After we blocked their first address at 22:24, they switched to a second rented server. Servers like that are often
+    paid for with fake or stolen details, so those addresses lead nowhere.</p>
+  <div class="term">
+    <div class="bar"><i></i><i></i><i></i><span>firewall.log</span></div>
+    <div class="body flog">
+      <div><span class="d">22:04</span><span>203.0.113.7</span><span class="r">allowed</span></div>
+      <div><span class="d">22:24</span><span>203.0.113.7</span><span class="g">blocked</span></div>
+      <div><span class="d">22:31</span><span>203.0.113.52</span><span>→ web server</span></div>
+      <div><span class="d">02:19</span><span>203.0.113.52</span><span>→ web server</span></div>
+      <div class="odd"><span class="d">02:31</span><span>198.51.100.23</span><span>→ web server</span></div>
+      <div><span class="d">02:33</span><span>203.0.113.52</span><span>→ web server</span></div>
+    </div>
+  </div>
+  <p class="step" data-run="slipup">Except once. At 02:31, for a single connection, the traffic came from a different
+    address: a home internet connection. Someone forgot to switch on their VPN.</p>
+  <p class="step">The firewall that let them in at 22:04 is the same agent that wrote all this down. Its percepts are our
+    evidence now.</p>
+  <p class="step">We can't knock on doors ourselves. We hand the logs, the times and that address to the police, who can
+    ask the internet provider who was using it at 02:31.</p>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>That's our part done. Go home and get some sleep. You've earned it.</p></div></div>
+</section>
+
+<section class="page" data-clock="+3 wk" data-where="Epilogue · Case closed" data-init="caseFile">
+  <p class="kicker">Three weeks later</p>
+  <h2>Case closed</h2>
+  <div class="case">
+    <div class="case-h">Case file · night shift incident</div>
+    <div class="kvc">
+      <span>Way in</span><span>phishing email, stolen password</span>
+      <span>Target</span><span>payments database db-02</span>
+      <span>Data lost</span><span>a few kilobytes, a test copy</span>
+      <span>Evidence</span><span>firewall logs, login records, the phishing email</span>
+      <span>Suspects</span><span>two people</span>
+    </div>
+    <div class="stamp">Identified</div>
+  </div>
+  <p class="step" data-run="stamp">The police traced the home address from 02:31 to one of the attackers. On that laptop
+    they found the fake login page, and messages that led to a second person. Both were charged.</p>
+  <p class="step">One more thing came out. The transfer from db-02 at 03:12 was a test, a few kilobytes. The real copy of
+    the payments data was set to start at 05:30. We pulled the plug at 05:00.</p>
+  <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
+    <p>Three weeks ago you walked in for your first night shift. Welcome to the team.</p></div></div>
+</section>
+
+</main>
+
+<nav class="controls">
+  <div class="row">
+    <button class="btn ghost" data-go="back">◂ Back</button>
+    <span class="count"></span>
+    <button class="btn" data-go="next">Next ▸</button>
+  </div>
+</nav>
+
+<div class="menu" hidden>
+  <div class="menu-card">
+    <p class="kicker">Contents</p>
+    <ol class="toc" data-toc-list="menu"></ol>
+    <button class="btn ghost" data-go="close">Close</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  const pages = [...document.querySelectorAll('.page')];
+  const $ = sel => document.querySelector(sel);
+  const q = (p, s) => p.querySelector(s);
+  const qa = (p, s) => [...p.querySelectorAll(s)];
+  const nextBtn = $('[data-go="next"]'), backBtn = $('[data-go="back"]');
+  const menu = $('.menu');
+  let cur = 0, shown = 0, timers = [], busyUntil = 0;
+  const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+  const stepsOf = p => [...p.querySelectorAll('.step')];
+
+  // Prepares a path so it can be "drawn" by animating its dash offset.
+  function prepDraw(path) {
+    const len = path.getTotalLength();
+    path.style.transition = 'none';
+    path.style.strokeDasharray = len;
+    path.style.strokeDashoffset = len;
+    void path.getBoundingClientRect();
+    path.style.transition = '';
+  }
+  function draw(path, instant) {
+    if (instant) path.style.transition = 'none';
+    path.style.strokeDashoffset = '0';
+  }
+  const on = (el, instant) => { el.style.transition = instant ? 'none' : ''; el.classList.add('on'); };
+  const resetFades = p => qa(p, '.fade').forEach(el => { el.style.transition = ''; el.classList.remove('on'); });
+
+  const INIT = {}, RUN = {};
+
+  // ---------- cover ----------
+  INIT.cover = p => {
+    const log = q(p, '#boot');
+    log.innerHTML = '';
+    const lines = [
+      '<span class="w">$ shift start --night</span>',
+      '<span class="d">[22:00]</span> night shift started',
+      '<span class="d">[22:00]</span> firewall ............. <span class="g">online</span>',
+      '<span class="d">[22:00]</span> intrusion detection .. <span class="g">online</span>',
+      '<span class="d">[22:00]</span> response bot ......... <span class="g">online</span>',
+      '<span class="d">[22:00]</span> team lead ............ <span class="w">Sam</span>',
+      '<span class="d">[22:00]</span> intern ............... <span class="w">you</span>',
+      '<span class="d">[22:04]</span> <span class="r">ALERT suspicious traffic</span>'
+    ];
+    lines.forEach((html, i) => later(500 + i * 550, () => {
+      log.querySelectorAll('.cursor').forEach(c => c.classList.remove('cursor'));
+      const d = document.createElement('div');
+      d.innerHTML = html;
+      if (i === lines.length - 1) d.classList.add('cursor');
+      log.appendChild(d);
+    }));
+  };
+
+  // ---------- chapter 1 ----------
+  INIT.loop = p => {
+    qa(p, '.draw').forEach(prepDraw);
+    qa(p, '.head, .lab').forEach(el => { el.style.transition = ''; el.classList.remove('on'); });
+    qa(p, '.dot').forEach(d => { d.style.transition = 'none'; d.style.opacity = '0'; d.style.transform = ''; });
+  };
+  function drawArrow(p, which, instant) {
+    draw(q(p, '[data-arrow="' + which + '"]'), instant);
+    qa(p, '[data-head="' + which + '"], [data-lab="' + which + '"]').forEach(el => on(el, instant));
+  }
+  function moveDot(p, which, dy) {
+    const dot = q(p, '[data-dot="' + which + '"]');
+    dot.style.transition = 'none';
+    dot.style.transform = 'translateY(0)';
+    dot.style.opacity = '1';
+    void dot.getBoundingClientRect();
+    later(1000, () => {
+      dot.style.transition = 'transform 1.4s ease-in-out, opacity .4s ease 1.3s';
+      dot.style.transform = 'translateY(' + dy + 'px)';
+      dot.style.opacity = '0';
+    });
+  }
+  RUN.loopIn = (p, instant) => { drawArrow(p, 'in', instant); if (!instant) moveDot(p, 'in', 86); return 1100; };
+  RUN.loopOut = (p, instant) => { drawArrow(p, 'out', instant); if (!instant) moveDot(p, 'out', -86); return 1100; };
+  INIT.rules = p => {
+    const list = q(p, '.list');
+    ['a', 'b', 'c'].forEach(id => list.appendChild(q(list, '[data-r="' + id + '"]')));
+    [...list.children].forEach((r, i) => {
+      r.classList.remove('scan', 'hitbad', 'hitgood', 'skip');
+      r.style.transition = 'none';
+      r.style.transform = '';
+      void r.offsetWidth;
+      r.style.transition = '';
+      q(r, '.n').textContent = i + 1;
+    });
+    q(p, '.pkt').innerHTML = '<span class="d">▸ waiting for a packet</span><span class="cursor"></span>';
+    q(p, '.res').innerHTML = '';
+  };
+  RUN.check = (p, instant) => {
+    const rows = qa(p, '.list .rrow'), res = q(p, '.res');
+    q(p, '.pkt').innerHTML = '▸ packet from <span class="w">203.0.113.7</span> to port <span class="w">443</span>';
+    const verdict = () => {
+      rows[0].classList.remove('scan');
+      rows[0].classList.add('hitbad');
+      rows.slice(1).forEach(r => r.classList.add('skip'));
+      res.innerHTML = '<span class="r">ALLOWED</span> <span class="d">by rule 1 · rules 2 and 3 never read</span>';
+    };
+    if (instant) return verdict();
+    res.innerHTML = '<span class="d">checking rule 1…</span>';
+    rows[0].classList.add('scan');
+    later(1100, verdict);
+    return 1150;
+  };
+  RUN.fix = (p, instant) => {
+    const list = q(p, '.list'), res = q(p, '.res');
+    const a = q(list, '[data-r="a"]'), b = q(list, '[data-r="b"]');
+    [...list.children].forEach(r => r.classList.remove('scan', 'hitbad', 'hitgood', 'skip'));
+    const reorder = () => {
+      list.insertBefore(b, a);
+      [a, b].forEach(r => { r.style.transition = 'none'; r.style.transform = ''; void r.offsetWidth; r.style.transition = ''; });
+      [...list.children].forEach((r, i) => (q(r, '.n').textContent = i + 1));
+    };
+    const verdict = () => {
+      const rows = [...list.children];
+      rows[0].classList.remove('scan');
+      rows[0].classList.add('hitgood');
+      rows.slice(1).forEach(r => r.classList.add('skip'));
+      res.innerHTML = '<span class="g">BLOCKED</span> <span class="d">by rule 1 · the block rule now comes first</span>';
+    };
+    if (instant) { reorder(); return verdict(); }
+    res.innerHTML = '<span class="d">swapping rules 1 and 2…</span>';
+    const d = b.offsetTop - a.offsetTop;
+    a.style.transform = 'translateY(' + d + 'px)';
+    b.style.transform = 'translateY(' + (-d) + 'px)';
+    later(950, () => {
+      reorder();
+      list.children[0].classList.add('scan');
+      res.innerHTML = '<span class="d">checking rule 1…</span>';
+    });
+    later(2000, verdict);
+    return 2050;
+  };
+  INIT.bounce = p => {
+    const pk = q(p, '.packet');
+    pk.style.transition = 'none';
+    pk.style.transform = 'translateX(0)';
+    void pk.getBoundingClientRect();
+    resetFades(p);
+  };
+  RUN.bounce = (p, instant) => {
+    const pk = q(p, '.packet');
+    if (instant) { qa(p, '.fade').forEach(el => on(el, true)); return 0; }
+    pk.style.transition = 'transform .8s ease-in';
+    later(100, () => (pk.style.transform = 'translateX(32px)'));
+    later(950, () => {
+      qa(p, '.fade').forEach(el => on(el));
+      pk.style.transition = 'transform .6s ease-out';
+      pk.style.transform = 'translateX(0)';
+    });
+    return 1700;
+  };
+
+  // ---------- chapter 2 ----------
+  const TREE = { web: [160, 24], mail: [83, 96], VPN: [238, 96], 'hr-pc': [44, 168], printer: [121, 168], storage: [199, 168], backup: [276, 168] };
+  const TREE_EDGES = [['web', 'mail'], ['web', 'VPN'], ['mail', 'hr-pc'], ['mail', 'printer'], ['VPN', 'storage'], ['VPN', 'backup']];
+  function orderSVG() {
+    let s = '<svg class="dg order" viewBox="0 0 320 188" role="img" aria-label="Machines reachable from the web server: mail and VPN, then hr-pc, printer, storage and backup">';
+    TREE_EDGES.forEach(([a, b]) => {
+      s += '<line class="edge" x1="' + TREE[a][0] + '" y1="' + (TREE[a][1] + 14) + '" x2="' + TREE[b][0] + '" y2="' + (TREE[b][1] - 14) + '"/>';
+    });
+    Object.keys(TREE).forEach(n => {
+      const [x, y] = TREE[n], bx = x + 31, by = y - 14;
+      s += '<g class="tn" data-n="' + n + '"><rect x="' + (x - 33) + '" y="' + (y - 14) + '" width="66" height="28" rx="8"/>' +
+        '<text x="' + x + '" y="' + y + '">' + n + '</text>' +
+        '<g class="badge fade"><circle cx="' + bx + '" cy="' + by + '" r="9"/><text x="' + bx + '" y="' + by + '"></text></g></g>';
+    });
+    return s + '</svg>';
+  }
+  INIT.order = p => { q(p, '.order-host').innerHTML = orderSVG(); q(p, '.ordcap').innerHTML = ''; };
+  function showOrder(p, order, cls, instant) {
+    qa(p, '.tn').forEach(n => n.classList.remove('seen', 'b', 'd'));
+    qa(p, '.badge').forEach(b => { b.style.transition = 'none'; b.classList.remove('on'); });
+    const one = (name, i) => {
+      const g = q(p, '.tn[data-n="' + name + '"]'), b = q(g, '.badge');
+      g.classList.add('seen', cls);
+      q(b, 'text').textContent = i + 1;
+      on(b, instant);
+    };
+    if (instant) { order.forEach(one); return 0; }
+    order.forEach((name, i) => later(250 + i * 520, () => one(name, i)));
+    return 250 + order.length * 520;
+  }
+  RUN.bfsOrder = (p, instant) => {
+    q(p, '.ordcap').innerHTML = '<span class="g">BFS</span> <span class="d">· a queue · goes wide, layer by layer</span>';
+    return showOrder(p, ['web', 'mail', 'VPN', 'hr-pc', 'printer', 'storage', 'backup'], 'b', instant);
+  };
+  RUN.dfsOrder = (p, instant) => {
+    q(p, '.ordcap').innerHTML = '<span class="w">DFS</span> <span class="d">· a stack · goes deep, then backs up</span>';
+    return showOrder(p, ['web', 'mail', 'hr-pc', 'printer', 'VPN', 'storage', 'backup'], 'd', instant);
+  };
+
+  const NAME = { WEB: 'web', MAIL: 'mail', VPN: 'VPN', DB: 'database' };
+  function graphSVG() {
+    const node = (id, x, y, w, label, cls) => '<g class="node' + (cls ? ' ' + cls : '') + '" data-n="' + id + '"><rect x="' + x + '" y="' + y +
+      '" width="' + w + '" height="30" rx="8"/><text x="' + (x + w / 2) + '" y="' + (y + 15) + '">' + label + '</text></g>';
+    return '<svg class="dg graph" viewBox="0 0 330 214" role="img" aria-label="Network graph: web to mail costs 2, web to VPN 8, mail to database 10, VPN to database 1">' +
+      '<line class="edge" data-e="wm" x1="72" y1="92" x2="140" y2="55"/>' +
+      '<line class="edge" data-e="wv" x1="72" y1="122" x2="140" y2="159"/>' +
+      '<line class="edge" data-e="md" x1="190" y1="55" x2="256" y2="92"/>' +
+      '<line class="edge" data-e="vd" x1="190" y1="159" x2="256" y2="122"/>' +
+      '<text class="cost" x="94" y="64">2</text><text class="cost" x="94" y="152">8</text>' +
+      '<text class="cost" x="236" y="64">10</text><text class="cost" x="236" y="152">1</text>' +
+      node('WEB', 12, 92, 80, 'web') + node('MAIL', 125, 25, 80, 'mail') + node('VPN', 125, 159, 80, 'VPN') +
+      node('DB', 236, 92, 88, 'database', 'goal') +
+      '<text class="eye fade" x="165" y="204">WATCHED</text></svg>';
+  }
+  INIT.graph = p => {
+    q(p, '.graph-host').innerHTML = graphSVG();
+    q(p, '.fr').innerHTML = '<span class="d">frontier:</span> web';
+    q(p, '.res').innerHTML = '';
+  };
+  function playSearch(p, frames, instant, finish) {
+    const show = f => {
+      qa(p, '.node').forEach(n => {
+        n.classList.toggle('cur', n.dataset.n === f.cur);
+        n.classList.toggle('done', f.done.includes(n.dataset.n));
+      });
+      q(p, '.fr').innerHTML = '<span class="d">expanding</span> <span class="w">' + NAME[f.cur] + '</span><br><span class="d">frontier:</span> ' + f.fr;
+    };
+    if (instant) { show(frames[frames.length - 1]); finish(); return 0; }
+    frames.forEach((f, i) => later(i * 950, () => show(f)));
+    later(frames.length * 950 - 350, finish);
+    return frames.length * 950;
+  }
+  RUN.bfs = (p, instant) => playSearch(p, [
+    { cur: 'WEB', done: [], fr: 'mail, VPN' },
+    { cur: 'MAIL', done: ['WEB'], fr: 'VPN, database (12)' },
+    { cur: 'VPN', done: ['WEB', 'MAIL'], fr: 'database (12)' },
+    { cur: 'DB', done: ['WEB', 'MAIL', 'VPN'], fr: 'goal reached' }
+  ], instant, () => {
+    ['wm', 'md'].forEach(e => q(p, '[data-e="' + e + '"]').classList.add('bfs'));
+    q(p, '.res').insertAdjacentHTML('beforeend', '<div class="r">BFS: web → mail → database · effort 2 + 10 = 12</div>');
+  });
+  RUN.ucs = (p, instant) => playSearch(p, [
+    { cur: 'WEB', done: [], fr: 'mail 2, VPN 8' },
+    { cur: 'MAIL', done: ['WEB'], fr: 'VPN 8, database 12' },
+    { cur: 'VPN', done: ['WEB', 'MAIL'], fr: 'database 9 (cheaper than 12)' },
+    { cur: 'DB', done: ['WEB', 'MAIL', 'VPN'], fr: 'goal reached' }
+  ], instant, () => {
+    ['wv', 'vd'].forEach(e => q(p, '[data-e="' + e + '"]').classList.add('ucs'));
+    q(p, '.res').insertAdjacentHTML('beforeend', '<div class="g">UCS: web → VPN → database · effort 8 + 1 = 9</div>');
+  });
+  INIT.astar = p => {
+    qa(p, '.fcard').forEach(c => c.classList.remove('pick', 'skip'));
+    q(p, '.astar-res').innerHTML = '';
+  };
+  RUN.astar = (p, instant) => {
+    const fin = () => {
+      q(p, '[data-c="2"]').classList.add('pick');
+      q(p, '[data-c="1"]').classList.add('skip');
+      q(p, '.astar-res').innerHTML = '<span class="g">A* takes route 2</span> <span class="d">· lowest f</span>';
+    };
+    if (instant) { fin(); return 0; }
+    later(1000, fin);
+    return 1100;
+  };
+  INIT.routeMove = p => { q(p, '.graph-host').innerHTML = graphSVG(); q(p, '.res').innerHTML = ''; };
+  RUN.watch = (p, instant) => {
+    const route = () => {
+      ['wv', 'vd'].forEach(e => q(p, '[data-e="' + e + '"]').classList.add('atk'));
+      q(p, '.res').innerHTML = '<div class="r">their cheapest route: web → VPN → database · effort 9</div>';
+    };
+    const guard = () => {
+      q(p, '[data-n="VPN"]').classList.add('guard');
+      on(q(p, '.eye'), instant);
+      q(p, '.res').insertAdjacentHTML('beforeend', '<div class="g">our move: watch and tripwire on the VPN gateway</div>');
+    };
+    if (instant) { route(); guard(); return 0; }
+    later(200, route);
+    later(1400, guard);
+    return 1700;
+  };
+
+  // ---------- chapter 3 ----------
+  const HILL = [1, 3, 5, 8, 6, 4, 2];
+  const hx = i => 19 + i * 42 + 15, hy = i => 150 - HILL[i] * 16 - 10;
+  INIT.hill = p => {
+    q(p, '.pillars').innerHTML = HILL.map((v, i) => {
+      const x = 19 + i * 42, h = v * 16;
+      return '<rect class="pillar" data-i="' + i + '" x="' + x + '" y="' + (150 - h) + '" width="30" height="' + h + '" rx="3"/>' +
+        '<text class="val" x="' + (x + 15) + '" y="' + (150 - h + 11) + '">' + v + '</text>' +
+        '<text class="idx" x="' + (x + 15) + '" y="164">' + i + '</text>';
+    }).join('') + '<text class="idx" x="160" y="179">setting</text>';
+    const c = q(p, '.climber');
+    c.style.transition = 'none';
+    c.style.transform = 'translate(' + hx(0) + 'px,' + hy(0) + 'px)';
+    void c.getBoundingClientRect();
+    c.style.transition = '';
+    q(p, '.pillar[data-i="0"]').classList.add('seen');
+    q(p, '.stop').classList.remove('on');
+  };
+  RUN.climb = (p, instant) => {
+    const c = q(p, '.climber');
+    const go = i => {
+      c.style.transform = 'translate(' + hx(i) + 'px,' + hy(i) + 'px)';
+      q(p, '.pillar[data-i="' + i + '"]').classList.add('seen');
+    };
+    if (instant) { c.style.transition = 'none'; [1, 2, 3].forEach(go); on(q(p, '.stop'), true); return 0; }
+    [1, 2, 3].forEach((i, k) => later(400 + k * 850, () => go(i)));
+    later(400 + 3 * 850, () => on(q(p, '.stop')));
+    return 3100;
+  };
+  function pointAtX(path, x) {
+    let lo = 0, hi = path.getTotalLength();
+    for (let k = 0; k < 28; k++) {
+      const mid = (lo + hi) / 2;
+      if (path.getPointAtLength(mid).x < x) lo = mid; else hi = mid;
+    }
+    return path.getPointAtLength((lo + hi) / 2);
+  }
+  function slide(p, dot, x0, x1, ms, instant) {
+    const path = q(p, '.curve'), gen = p.dataset.gen;
+    const place = x => { const pt = pointAtX(path, x); dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y - 9); };
+    dot.style.transition = instant ? 'none' : '';
+    dot.classList.add('on');
+    if (instant) { place(x1); return; }
+    place(x0);
+    const t0 = performance.now();
+    const tick = now => {
+      if (p.dataset.gen !== gen) return;
+      const t = Math.min(1, (now - t0) / ms), e = t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      place(x0 + (x1 - x0) * e);
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+  INIT.land = p => {
+    p.dataset.gen = String(Math.random());
+    qa(p, '.cl, .tag').forEach(el => { el.style.transition = ''; el.classList.remove('on'); });
+  };
+  RUN.stuck = (p, instant) => {
+    slide(p, q(p, '.c0'), 22, 85, 1700, instant);
+    if (instant) { on(q(p, '[data-t="local"]'), true); return 0; }
+    later(1800, () => on(q(p, '[data-t="local"]')));
+    return 2000;
+  };
+  RUN.restarts = (p, instant) => {
+    if (instant) {
+      slide(p, q(p, '.c1'), 125, 85, 0, true);
+      slide(p, q(p, '.c2'), 198, 240, 0, true);
+      on(q(p, '[data-t="global"]'), true);
+      return 0;
+    }
+    later(200, () => slide(p, q(p, '.c1'), 125, 85, 1100));
+    later(1600, () => slide(p, q(p, '.c2'), 198, 240, 1300));
+    later(3000, () => on(q(p, '[data-t="global"]')));
+    return 3100;
+  };
+  INIT.anneal = p => {
+    p.dataset.gen = String(Math.random());
+    qa(p, '.tag').forEach(el => { el.style.transition = ''; el.classList.remove('on'); });
+    slide(p, q(p, '.c0'), 85, 85, 0, true);
+    const t = q(p, '.temp i');
+    t.style.transition = 'none';
+    t.style.width = '100%';
+  };
+  RUN.anneal = (p, instant) => {
+    const dot = q(p, '.c0'), t = q(p, '.temp i');
+    if (instant) {
+      slide(p, dot, 150, 240, 0, true);
+      qa(p, '.tag').forEach(el => on(el, true));
+      t.style.transition = 'none';
+      t.style.width = '6%';
+      return 0;
+    }
+    void t.offsetWidth;
+    t.style.transition = 'width 3.4s linear';
+    t.style.width = '6%';
+    slide(p, dot, 85, 150, 1300);
+    later(1350, () => on(q(p, '[data-t="down"]')));
+    later(1500, () => slide(p, dot, 150, 240, 1700));
+    later(3250, () => on(q(p, '[data-t="top"]')));
+    return 3500;
+  };
+  const DX = i => 66 + i * 40;
+  INIT.dial = p => {
+    q(p, '.ticks').innerHTML = HILL.map((v, i) =>
+      '<line class="tick" x1="' + DX(i) + '" y1="48" x2="' + DX(i) + '" y2="64"/>' +
+      '<text class="num" x="' + DX(i) + '" y="78">' + i + '</text>' +
+      '<text class="score fade' + (i === 4 ? ' no' : '') + '" data-s="' + i + '" x="' + DX(i) + '" y="30">' + (i === 4 ? v + ' ✗' : v) + '</text>').join('');
+    const k = q(p, '.knob');
+    k.style.transition = 'none';
+    k.style.transform = 'translateX(0)';
+    void k.getBoundingClientRect();
+    k.style.transition = '';
+    resetFades(p);
+    on(q(p, '[data-s="0"]'), true);
+    q(p, '.res').innerHTML = '';
+  };
+  RUN.dial = (p, instant) => {
+    const k = q(p, '.knob'), path = [1, 2, 3, 4, 3];
+    const go = i => { k.style.transform = 'translateX(' + (DX(i) - DX(0)) + 'px)'; on(q(p, '[data-s="' + i + '"]'), instant); };
+    const fin = () => {
+      on(q(p, '.best'), instant);
+      q(p, '.res').innerHTML = '<span class="d">5 tests · about 50 minutes</span><br><span class="d">00:56</span> <span class="r">slow scan detected · it was mapping the VPN gateway</span>';
+    };
+    if (instant) { k.style.transition = 'none'; path.forEach(go); fin(); return 0; }
+    path.forEach((i, n) => later(300 + n * 750, () => go(i)));
+    later(300 + path.length * 750, fin);
+    return 4100;
+  };
+
+  // ---------- chapter 4 ----------
+  const LEAVES = [[3, 12, 8], [2, 4, 6], [14, 5, 2]], MX = [60, 170, 280];
+  const lx = (k, j) => MX[k] + (j - 1) * 34;
+  function treeSVG() {
+    const line = (id, x1, y1, x2, y2) => '<line class="edge" data-id="' + id + '" x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '"/>';
+    let s = '<svg class="dg tree" viewBox="0 0 340 214" role="img" aria-label="Game tree: our options A, B and C, the attacker\'s replies, and leaf scores 3, 12, 8, 2, 4, 6, 14, 5, 2">';
+    s += '<text class="role" x="338" y="30">US · MAX</text><text class="role" x="338" y="80">ATTACKER · MIN</text>';
+    MX.forEach((x, k) => {
+      s += line('e-r-' + k, 170, 54, x, 92);
+      LEAVES[k].forEach((v, j) => { s += line('e-' + k + '-' + j, x, 132, lx(k, j), 181); });
+    });
+    s += '<text class="opt" x="104" y="68">A</text><text class="opt" x="180" y="74">B</text><text class="opt" x="236" y="68">C</text>';
+    s += '<g class="node max" data-id="root"><polygon class="shape" points="170,12 196,54 144,54"/><text class="q" x="170" y="42">?</text></g>';
+    MX.forEach((x, k) => {
+      s += '<g class="node min" data-id="m' + k + '"><polygon class="shape" points="' + (x - 26) + ',92 ' + (x + 26) + ',92 ' + x + ',132"/>' +
+        '<text class="q" x="' + x + '" y="105">?</text></g>';
+      LEAVES[k].forEach((v, j) => {
+        s += '<g class="node leaf" data-id="l' + k + '-' + j + '"><rect class="shape" x="' + (lx(k, j) - 14) + '" y="181" width="28" height="26" rx="6"/>' +
+          '<text x="' + lx(k, j) + '" y="194">' + v + '</text></g>';
+      });
+    });
+    s += '<text class="cut" x="184" y="160">✂</text></svg>';
+    return s;
+  }
+  const tnode = (p, id) => q(p, '[data-id="' + id + '"]');
+  function setVal(p, id, v) { const t = q(tnode(p, id), 'text'); t.textContent = v; t.classList.remove('q'); }
+  function minStep(p, k, j) {
+    setVal(p, 'm' + k, LEAVES[k][j]);
+    tnode(p, 'l' + k + '-' + j).classList.add('pick');
+    tnode(p, 'e-' + k + '-' + j).classList.add('on');
+  }
+  const PICKS = [0, 0, 2];
+  function maxStep(p) { setVal(p, 'root', 3); tnode(p, 'm0').classList.add('pick'); tnode(p, 'e-r-0').classList.add('on'); }
+  INIT.tree = p => { q(p, '.tree-host').innerHTML = treeSVG(); };
+  RUN.minVals = (p, instant) => {
+    if (instant) { PICKS.forEach((j, k) => minStep(p, k, j)); return 0; }
+    PICKS.forEach((j, k) => later(150 + k * 800, () => minStep(p, k, j)));
+    return 1900;
+  };
+  RUN.maxVal = (p, instant) => {
+    if (instant) { maxStep(p); return 0; }
+    later(300, () => maxStep(p));
+    return 800;
+  };
+  RUN.tempt = p => { tnode(p, 'l2-0').classList.add('tempt'); return 400; };
+  INIT.tree2 = p => {
+    q(p, '.tree-host').innerHTML = treeSVG();
+    PICKS.forEach((j, k) => minStep(p, k, j));
+    maxStep(p);
+  };
+  RUN.prune = (p, instant) => {
+    const fin = () => {
+      ['l1-1', 'l1-2', 'e-1-1', 'e-1-2'].forEach(id => tnode(p, id).classList.add('pruned'));
+      on(q(p, '.cut'), instant);
+    };
+    if (instant) { fin(); return 0; }
+    later(500, fin);
+    return 900;
+  };
+  INIT.opts = p => { qa(p, '.opt').forEach(o => o.classList.remove('pick', 'skip')); q(p, '.res').innerHTML = ''; };
+  RUN.pickA = (p, instant) => {
+    const fin = () => {
+      qa(p, '.opt').forEach(o => o.classList.add(o.dataset.o === 'A' ? 'pick' : 'skip'));
+      q(p, '.res').innerHTML = '<span class="g">A holds: its worst case is 3, while B and C can drop to 2</span>';
+    };
+    if (instant) { fin(); return 0; }
+    later(500, fin);
+    return 800;
+  };
+
+  // ---------- chapter 5 ----------
+  INIT.mdp = p => resetFades(p);
+  RUN.mdp = (p, instant) => {
+    const outs = qa(p, '.out');
+    if (instant) { outs.forEach(el => on(el, true)); return 0; }
+    outs.forEach((el, n) => later(150 + n * 500, () => on(el)));
+    return 1800;
+  };
+  const QF = [[.3, .3, .3], [.55, .35, .3], [.3, .55, .65], [.15, .55, .9]];
+  const QCAP = ['before practice: every score is a guess', 'early rounds: watching looks fine', 'more rounds: the scores shift', 'after many rounds: isolate wins'];
+  function setQ(p, f, instant) {
+    qa(p, '.qb').forEach((row, i) => {
+      const bar = q(row, 'i');
+      bar.style.transition = instant ? 'none' : '';
+      bar.style.width = (QF[f][i] * 100) + '%';
+      row.classList.toggle('best', f === 3 && i === 2);
+    });
+    q(p, '.res').innerHTML = '<span class="' + (f === 3 ? 'g' : 'd') + '">' + QCAP[f] + '</span>';
+  }
+  INIT.learn = p => setQ(p, 0, true);
+  RUN.learn = (p, instant) => {
+    if (instant) { setQ(p, 3, true); return 0; }
+    [1, 2, 3].forEach((f, n) => later(200 + n * 1300, () => setQ(p, f)));
+    return 200 + 3 * 1300;
+  };
+  INIT.lan = p => { q(p, '.lan').classList.remove('cut'); resetFades(p); q(p, '.res').innerHTML = ''; };
+  RUN.isolate = (p, instant) => {
+    const fin = () => {
+      q(p, '.lan').classList.add('cut');
+      qa(p, '.fade').forEach(el => on(el, instant));
+      q(p, '.res').innerHTML = '<span class="d">options:</span> watch · reset password · <span class="g">isolate ✓ highest learned value</span>';
+    };
+    if (instant) { fin(); return 0; }
+    later(400, fin);
+    return 900;
+  };
+
+  // ---------- chapter 6 ----------
+  function barsIn(p, delays, instant) {
+    const bars = qa(p, '.hb-bar');
+    if (instant) { bars.forEach(b => { qa(b, 'i').forEach(i => (i.style.transition = 'none')); b.classList.add('on'); }); return; }
+    bars.forEach(b => qa(b, 'i').forEach(i => (i.style.transition = '')));
+    bars.forEach((b, n) => later(delays[n], () => b.classList.add('on')));
+  }
+  const barsOff = p => qa(p, '.hb-bar').forEach(b => b.classList.remove('on'));
+  INIT.freq = p => { resetFades(p); q(p, '.res').innerHTML = ''; };
+  RUN.freq = (p, instant) => {
+    const parts = ['.f1', '.f2', '.f3'].map(s => q(p, s));
+    const fin = () => (q(p, '.res').innerHTML = '<span class="r">fewer than 1 alert in 10 is real</span>');
+    if (instant) { parts.forEach(el => on(el, true)); fin(); return 0; }
+    parts.forEach((el, n) => later(200 + n * 1100, () => on(el)));
+    later(200 + 3 * 1100, fin);
+    return 3600;
+  };
+  function setBelief(p, atk, bak, la, lb, instant) {
+    [['atk', atk, la], ['bak', bak, lb]].forEach(([k, v, l]) => {
+      const b = q(p, '[data-b="' + k + '"]');
+      b.style.transition = instant ? 'none' : '';
+      b.style.transform = 'scaleX(' + v + ')';
+      q(p, '[data-l="' + k + '"]').textContent = l;
+    });
+  }
+  INIT.bn = p => {
+    qa(p, '.nd').forEach(n => n.classList.remove('seen'));
+    resetFades(p);
+    setBelief(p, 0.15, 0.35, 'unlikely', 'possible', true);
+  };
+  RUN.seen = (p, instant) => {
+    q(p, '[data-n="eff"]').classList.add('seen');
+    on(q(p, '[data-f="seen"]'), instant);
+    setBelief(p, 0.45, 0.75, 'more likely', 'more likely', instant);
+    return 1100;
+  };
+  RUN.explain = (p, instant) => {
+    q(p, '[data-n="bak"]').classList.add('seen');
+    setBelief(p, 0.15, 1, 'unlikely again', 'confirmed', instant);
+    return 1100;
+  };
+  INIT.funnel = p => { barsOff(p); q(p, '.topitem').classList.remove('on'); };
+  RUN.funnel = (p, instant) => {
+    barsIn(p, [150, 1400], instant);
+    if (instant) { on(q(p, '.topitem'), true); return 0; }
+    later(2700, () => on(q(p, '.topitem')));
+    return 2900;
+  };
+
+  // ---------- chapter 7 ----------
+  const BELIEF = [[0.8, 0.2], [0.533, 0.467], [0.277, 0.723], [0.394, 0.606]];
+  function fillCol(p, c, instant) {
+    const col = q(p, '[data-c="' + c + '"]'), [a, b] = BELIEF[c];
+    const cl = q(col, '.cl'), cp = q(col, '.cp');
+    [cl, cp].forEach(i => (i.style.transition = instant ? 'none' : ''));
+    col.classList.remove('off');
+    cl.style.setProperty('--h', (a * 100) + '%');
+    cp.style.setProperty('--h', (b * 100) + '%');
+    q(col, '.v').innerHTML = '<span class="g">' + a.toFixed(3) + '</span><br><span class="r">' + b.toFixed(3) + '</span>';
+  }
+  INIT.filter = p => {
+    qa(p, '.col').forEach(col => {
+      col.classList.add('off');
+      qa(col, 'i').forEach(i => { i.style.transition = 'none'; i.style.setProperty('--h', '0%'); });
+      q(col, '.v').innerHTML = '';
+    });
+    fillCol(p, 0, true);
+  };
+  RUN.f1 = (p, instant) => { fillCol(p, 1, instant); return 1100; };
+  RUN.f2 = (p, instant) => { fillCol(p, 2, instant); return 1100; };
+  RUN.f3 = (p, instant) => { fillCol(p, 3, instant); return 1100; };
+  INIT.viterbi = p => qa(p, '.vrow').forEach(r => r.classList.remove('best', 'dim'));
+  RUN.viterbi = (p, instant) => {
+    const fin = () => qa(p, '.vrow').forEach(r => r.classList.add(r.hasAttribute('data-best') ? 'best' : 'dim'));
+    if (instant) { fin(); return 0; }
+    later(900, fin);
+    return 1100;
+  };
+  function setGauge(p, v, label, instant) {
+    const n = q(p, '.needle');
+    n.style.transition = instant ? 'none' : '';
+    n.style.transform = 'rotate(' + (v * 180) + 'deg)';
+    q(p, '.pct').textContent = Math.round(v * 100) + '%';
+    q(p, '.gauge .cap').textContent = label;
+  }
+  INIT.gauge = p => setGauge(p, 0.2, 'before any reading', true);
+  RUN.gauge = (p, instant) => {
+    if (instant) { setGauge(p, 0.723, 'after two HIGH readings', true); return 0; }
+    later(300, () => setGauge(p, 0.467, 'after one HIGH reading'));
+    later(1700, () => setGauge(p, 0.723, 'after two HIGH readings'));
+    return 2700;
+  };
+
+  // ---------- chapter 8 ----------
+  const sx = z => 28 + (z + 6) * (284 / 12), sy = v => 172 - v * 140;
+  const sig = z => 1 / (1 + Math.exp(-z));
+  INIT.sig = p => {
+    let d = '';
+    for (let z = -6; z <= 6.001; z += 0.25) d += (d ? 'L' : 'M') + sx(z).toFixed(1) + ' ' + sy(sig(z)).toFixed(1);
+    const curve = q(p, '.curve');
+    curve.setAttribute('d', d);
+    prepDraw(curve);
+    qa(p, '.pt').forEach(g => {
+      const z = Number(g.dataset.z), x = sx(z), y = sy(sig(z));
+      const c = q(g, 'circle'), t = q(g, 'text');
+      c.setAttribute('cx', x); c.setAttribute('cy', y);
+      t.setAttribute('x', x + (z < 0 ? 10 : -10)); t.setAttribute('y', y + (z < 0 ? 9 : -12));
+    });
+    const f = q(p, '.file'), fx = sx(2), fy = sy(sig(2));
+    q(f, 'circle').setAttribute('cx', fx); q(f, 'circle').setAttribute('cy', fy);
+    q(f, 'text').setAttribute('x', fx + 10); q(f, 'text').setAttribute('y', fy + 16);
+    const thr = q(p, '.thr'), ty = sy(0.2);
+    q(thr, 'line').setAttribute('y1', ty); q(thr, 'line').setAttribute('y2', ty);
+    q(thr, 'text').setAttribute('y', ty - 9);
+    resetFades(p);
+  };
+  RUN.sigmoid = (p, instant) => {
+    draw(q(p, '.curve'), instant);
+    const pts = qa(p, '.pt');
+    if (instant) { pts.forEach(g => on(g, true)); return 0; }
+    pts.forEach((g, i) => later(1100 + i * 350, () => on(g)));
+    return 1900;
+  };
+  RUN.sfile = (p, instant) => { on(q(p, '.file'), instant); return 500; };
+  RUN.threshold = (p, instant) => { on(q(p, '.thr'), instant); return 500; };
+  INIT.files = p => {
+    const grid = q(p, '.files');
+    grid.className = 'files';
+    grid.innerHTML = Array.from({ length: 100 }, (_, i) => '<i' + (i === 23 || i === 71 ? ' class="m"' : '') + '></i>').join('');
+    q(p, '.res').innerHTML = '';
+  };
+  RUN.files = p => { q(p, '.files').classList.add('show'); return 500; };
+  RUN.always = (p, instant) => {
+    const fin = () => {
+      q(p, '.files').classList.add('always');
+      q(p, '.res').innerHTML = 'model: always "clean" → <span class="g">accuracy 98%</span> · <span class="r">recall 0%</span>';
+    };
+    if (instant) { fin(); return 0; }
+    later(400, fin);
+    return 700;
+  };
+  INIT.eu = p => barsOff(p);
+  RUN.eu = (p, instant) => { barsIn(p, [150, 900], instant); return instant ? 0 : 2100; };
+  INIT.unplug = p => {
+    barsOff(p);
+    q(p, '.swc').classList.remove('off');
+    q(p, '.sw-state').textContent = 'ONLINE';
+  };
+  RUN.unplug = (p, instant) => {
+    const off = () => { q(p, '.swc').classList.add('off'); q(p, '.sw-state').textContent = 'OFFLINE'; };
+    barsIn(p, [100, 1000], instant);
+    if (instant) { off(); return 0; }
+    later(2400, off);
+    return 2800;
+  };
+
+  // ---------- epilogue ----------
+  INIT.phish = p => qa(p, '.mail mark').forEach(m => { m.style.transition = ''; m.classList.remove('on'); });
+  RUN.phish = (p, instant) => {
+    const marks = qa(p, '.mail mark');
+    if (instant) { marks.forEach(m => on(m, true)); return 0; }
+    marks.forEach((m, i) => later(200 + i * 700, () => on(m)));
+    return 200 + marks.length * 700;
+  };
+  INIT.slipup = p => q(p, '.odd').classList.remove('on');
+  RUN.slipup = p => { q(p, '.odd').classList.add('on'); return 600; };
+  INIT.caseFile = p => { const s = q(p, '.stamp'); s.classList.remove('on'); s.style.animation = ''; s.style.opacity = ''; };
+  RUN.stamp = (p, instant) => {
+    const s = q(p, '.stamp');
+    if (instant) { s.style.animation = 'none'; s.style.opacity = '.9'; }
+    s.classList.add('on');
+    return 700;
+  };
+
+  // ---------- navigation ----------
+  function enter(i, revealAll) {
+    timers.forEach(clearTimeout);
+    timers = [];
+    busyUntil = 0;
+    pages[cur].classList.remove('active');
+    cur = Math.max(0, Math.min(pages.length - 1, i));
+    const p = pages[cur];
+    stepsOf(p).forEach(s => s.classList.remove('on', 'instant'));
+    shown = 0;
+    p.classList.add('active');
+    if (p.dataset.init) INIT[p.dataset.init](p);
+    window.scrollTo(0, 0);
+    if (revealAll) while (shown < stepsOf(p).length) reveal(true);
+    update();
+    try { history.replaceState(null, '', '#' + (cur + 1)); } catch (e) {}
+  }
+
+  function reveal(instant) {
+    const p = pages[cur], s = stepsOf(p)[shown++];
+    s.classList.add('on');
+    if (instant) s.classList.add('instant');
+    if (s.dataset.run) {
+      const ms = RUN[s.dataset.run](p, instant);
+      if (!instant && ms) busyUntil = Date.now() + ms;
+    }
+    if (!instant) later(80, () => s.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+  }
+
+  function next() {
+    if (!menu.hidden || Date.now() < busyUntil) return;
+    if (shown < stepsOf(pages[cur]).length) { reveal(false); return update(); }
+    if (cur < pages.length - 1) enter(cur + 1, false);
+    else enter(0, false);
+  }
+  function back() { if (menu.hidden && cur > 0) enter(cur - 1, true); }
+
+  function update() {
+    const p = pages[cur], n = stepsOf(p).length;
+    $('.clock').textContent = p.dataset.clock || 'SOC';
+    $('.where').textContent = p.dataset.where || '';
+    $('.count').textContent = (cur + 1) + ' / ' + pages.length;
+    $('.progress i').style.width = ((cur + (n ? shown / n : 1)) / pages.length * 100) + '%';
+    const atEnd = cur === pages.length - 1 && shown >= n;
+    nextBtn.textContent = atEnd ? 'Back to the cover ↺' : 'Next ▸';
+    backBtn.disabled = cur === 0;
+  }
+
+  // contents: built from the data-toc attributes of the pages
+  const chapters = pages.map((p, i) => [p, i]).filter(([p]) => p.dataset.toc).map(([p, i]) => {
+    const [time, title] = p.dataset.toc.split('|');
+    return { time, title, page: i };
+  });
+  qa(document, '[data-toc-list]').forEach(ol => {
+    const inMenu = ol.dataset.tocList === 'menu';
+    chapters.forEach(c => {
+      if (!inMenu && !c.time) return;
+      const li = document.createElement('li');
+      li.innerHTML = '<span></span><span></span>';
+      li.firstChild.textContent = c.time || '·';
+      if (!inMenu) li.lastChild.textContent = c.title;
+      else {
+        const b = document.createElement('button');
+        b.textContent = c.title;
+        b.addEventListener('click', () => { menu.hidden = true; enter(c.page, false); });
+        li.lastChild.appendChild(b);
+      }
+      ol.appendChild(li);
+    });
+  });
+
+  nextBtn.addEventListener('click', next);
+  backBtn.addEventListener('click', back);
+  $('[data-go="menu"]').addEventListener('click', () => (menu.hidden = !menu.hidden));
+  $('[data-go="close"]').addEventListener('click', () => (menu.hidden = true));
+  menu.addEventListener('click', e => { if (e.target === menu) menu.hidden = true; });
+  $('main').addEventListener('click', e => {
+    if (e.target.closest('button, a, input')) return;
+    if (String(window.getSelection ? window.getSelection() : '').length) return;
+    next();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { menu.hidden = true; return; }
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); next(); }
+    else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); back(); }
+  });
+
+  const start = parseInt(location.hash.slice(1), 10);
+  pages[0].classList.add('active');
+  enter(start > 0 ? start - 1 : 0, start > 1);
+})();
+</script>
+</body>
+</html>

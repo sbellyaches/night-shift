@@ -421,6 +421,29 @@ svg { display: block; width: 100%; height: auto; }
   .kv { grid-template-columns: 5.6em 1fr; }
   .btn { padding: 9px 16px; }
 }
+
+/* chapter sidebar and formula blocks */
+.side { display: none; }
+@media (min-width: 1000px) {
+  .side { display: block; position: fixed; top: 54px; bottom: 62px; left: 0; width: 250px; overflow-y: auto; padding: 18px 14px; border-right: 1px solid var(--line); background: var(--bg); z-index: 5; }
+  main { margin-left: max(270px, calc((100vw - 720px) / 2)); }
+}
+.side-h { margin: 0 0 8px 8px; font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.side-list { list-style: none; margin: 0; padding: 0; }
+.side-list button { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 3.2em 1fr; gap: 6px; width: 100%; padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 14px; line-height: 1.35; color: var(--muted); }
+.side-list button span:first-child { font: 600 12.5px/1.6 var(--mono); color: var(--tg-dim); }
+.side-list button:hover, .side-list button:focus-visible { background: var(--bg2); color: var(--text); }
+.side-list button.on { background: var(--bg2); color: #fff; box-shadow: inset 2px 0 0 var(--tg); }
+.side-list button.on span:first-child { color: var(--tg); }
+.formulas { margin: 0 0 18px; border: 1px solid var(--term-edge); border-radius: 12px; background: var(--term); }
+.formulas summary { cursor: pointer; padding: 11px 14px; font: 600 13px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--tg); list-style: none; }
+.formulas summary::-webkit-details-marker { display: none; }
+.formulas summary::before { content: "▸ "; }
+.formulas[open] summary::before { content: "▾ "; }
+.formulas .fbody { padding: 0 14px 10px; font: 13px/1.6 var(--mono); color: var(--tw); }
+.formulas .fbody div { display: grid; gap: 2px; padding: 7px 0; border-top: 1px dashed var(--term-edge); }
+.formulas .fbody b { color: var(--tg); font-weight: 600; }
+.formulas .fbody span { overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -433,6 +456,8 @@ svg { display: block; width: 100%; height: auto; }
   </div>
   <div class="progress"><i></i></div>
 </header>
+
+<nav class="side" aria-label="Chapters"><p class="side-h">Chapters</p><ol class="side-list"></ol></nav>
 
 <main>
 
@@ -614,6 +639,7 @@ svg { display: block; width: 100%; height: auto; }
   </div>
   <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
     <p>Good, that door's shut. But they were inside for twenty minutes before we closed it.</p></div></div>
+  <details class="step formulas"><summary>Formulas</summary><div class="fbody"><div><b>Rational agent</b><span>choose the action that maximizes <i>expected</i> performance, given the percept sequence so far</span></div><div><b>Agent</b><span>percepts (sensors) → decide → actions (actuators), in a loop</span></div><div><b>PEAS</b><span>Performance measure · Environment · Actuators · Sensors</span></div><div><b>Search problem</b><span>initial state · actions · transition model · goal test · path cost</span></div></div></details>
 </section>
 
 <!-- ===================== CHAPTER 2 · 23:00 ===================== -->
@@ -753,6 +779,7 @@ svg { display: block; width: 100%; height: auto; }
   </div>
   <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
     <p>Eyes on the VPN gateway. If they go for the database, that's the way they'll come.</p></div></div>
+  <details class="step formulas"><summary>Formulas</summary><div class="fbody"><div><b>A*</b><span>f(n) = g(n) + h(n)</span></div><div><b>Terms</b><span>g(n) = exact cost from start to n · h(n) = estimated cost from n to the goal</span></div><div><b>Admissible</b><span>0 ≤ h(n) ≤ h*(n): never overestimates → A* returns the cheapest path</span></div><div><b>Frontier</b><span>BFS: FIFO queue · DFS: LIFO stack · UCS: priority queue by g(n) · A*: by f(n)</span></div><div><b>Example</b><span>web→mail→DB = 2 + 10 = 12 · web→VPN→DB = 8 + 1 = 9 (UCS picks 9)</span></div></div></details>
 </section>
 
 <!-- ===================== CHAPTER 3 · 00:00 ===================== -->
@@ -893,6 +920,7 @@ svg { display: block; width: 100%; height: auto; }
   </div>
   <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
     <p>Setting 3, and the slow scan lights up. They're mapping the VPN gateway, just like you predicted.</p></div></div>
+  <details class="step formulas"><summary>Formulas</summary><div class="fbody"><div><b>Hill climbing</b><span>move to a better neighbour until none is better</span></div><div><b>Annealing</b><span>accept a worse move with P = e^(ΔE / T), ΔE &lt; 0</span></div><div><b>Cooling</b><span>T ← 0.95 · T (high T explores, low T refines)</span></div><div><b>Random restarts</b><span>expected climbs ≈ 1 / p · 8-queens: 1 / 0.14 ≈ 7</span></div><div><b>Gradient descent</b><span>x ← x − α · ∇f(x)</span></div></div></details>
 </section>
 
 <!-- ===================== CHAPTER 4 · 01:00 ===================== -->
@@ -1005,6 +1033,7 @@ svg { display: block; width: 100%; height: auto; }
   </div>
   <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
     <p>Option A is live. The gateway holds. They'll try something else.</p></div></div>
+  <details class="step formulas"><summary>Formulas</summary><div class="fbody"><div><b>Minimax</b><span>V(s) = U(s) at terminals · max over children at MAX · min at MIN · cost O(b^m)</span></div><div><b>Alpha-beta</b><span>MAX: α ← max(α, v) · MIN: β ← min(β, v) · prune when α ≥ β · best case ≈ O(b^(m/2))</span></div><div><b>Evaluation</b><span>Eval(s) = w₁f₁(s) + … + wₙfₙ(s)</span></div><div><b>Expectimax</b><span>V(chance) = Σ P(s′) · V(s′) · ½·8 + ⅓·24 + ⅙·(−12) = 10</span></div><div><b>Example</b><span>min(3,12,8)=3 · min(2,4,6)=2 · min(14,5,2)=2 → max = 3</span></div></div></details>
 </section>
 
 <!-- ===================== CHAPTER 5 · 02:00 ===================== -->
@@ -1128,6 +1157,7 @@ svg { display: block; width: 100%; height: auto; }
   </div>
   <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
     <p>Laptop-14 is cut off. The bot was faster than either of us.</p></div></div>
+  <details class="step formulas"><summary>Formulas</summary><div class="fbody"><div><b>Return</b><span>G = r₁ + γr₂ + γ²r₃ + … · (5, 10, 20, γ = 0.9) → 30.2</span></div><div><b>Bellman</b><span>V(s) = max_a Σ P(s′|s,a) · [R + γ · V(s′)] · V*(s) = max_a Q*(s,a)</span></div><div><b>Chain</b><span>V(B) = −1 + 0.9·10 = 8 · V(A) = −1 + 0.9·8 = 6.2</span></div><div><b>TD error</b><span>δ = r + γV(s′) − V(s) · 2 + 0.9·8 − 5 = 4.2</span></div><div><b>Q-learning</b><span>Q(s,a) ← Q(s,a) + α · [r + γ · max Q(s′,a′) − Q(s,a)] · 4 → 6.6</span></div><div><b>Knobs</b><span>α = learning rate · γ = discount · ε = exploration (ε-greedy)</span></div></div></details>
 </section>
 
 <!-- ===================== CHAPTER 6 · 03:00 ===================== -->
@@ -1252,6 +1282,7 @@ svg { display: block; width: 100%; height: auto; }
   </div>
   <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
     <p>Top of the list: db-02. That's where they are.</p></div></div>
+  <details class="step formulas"><summary>Formulas</summary><div class="fbody"><div><b>Conditional</b><span>P(A|B) = P(A,B) / P(B)</span></div><div><b>Bayes' rule</b><span>P(H|E) = P(E|H) · P(H) / P(E) · prior P(H), likelihood P(E|H), posterior P(H|E)</span></div><div><b>Total probability</b><span>P(E) = P(E|H)P(H) + P(E|¬H)P(¬H) = 0.95·0.01 + 0.10·0.99 = 0.1085</span></div><div><b>Posterior</b><span>0.0095 / 0.1085 ≈ 8.76% (95 real of 1,085 alerts)</span></div><div><b>Bayesian network</b><span>P(X₁,…,Xₙ) = Π P(Xᵢ | Parents(Xᵢ))</span></div></div></details>
 </section>
 
 <!-- ===================== CHAPTER 7 · 04:00 ===================== -->
@@ -1393,6 +1424,7 @@ svg { display: block; width: 100%; height: auto; }
   </div>
   <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
     <p>72%. We don't need more data. We need a decision.</p></div></div>
+  <details class="step formulas"><summary>Formulas</summary><div class="fbody"><div><b>HMM</b><span>π (start) + T (transitions) + O (emissions) · rows of T sum to 1</span></div><div><b>Filtering</b><span>b′(x′) = α · P(e | x′) · Σₓ P(x′ | x) · b(x) (predict → correct → normalize)</span></div><div><b>Prediction</b><span>pₜ₊ₖ = pₜ · Tᵏ</span></div><div><b>Example</b><span>[0.8, 0.2] → High → [0.533, 0.467] → High → [0.277, 0.723]</span></div><div><b>Viterbi</b><span>filtering with max instead of Σ + back-pointers · FF = 0.2·0.7·0.8·0.7 = 0.0784</span></div></div></details>
 </section>
 
 <!-- ===================== CHAPTER 8 · 05:00 ===================== -->
@@ -1518,6 +1550,7 @@ svg { display: block; width: 100%; height: auto; }
   </div>
   <div class="msg step"><span class="ava">S</span><div class="bubble"><span class="who">Sam · team lead</span>
     <p>db-02 is offline. They've lost their foothold.</p></div></div>
+  <details class="step formulas"><summary>Formulas</summary><div class="fbody"><div><b>Sigmoid</b><span>σ(z) = 1 / (1 + e^(−z)), z = wᵀx + b · σ(0) = 0.5, σ(2) ≈ 0.881</span></div><div><b>Metrics</b><span>Accuracy = (TP+TN)/N · Recall = TP/(TP+FN) · Precision = TP/(TP+FP)</span></div><div><b>F1</b><span>F1 = 2 · Precision · Recall / (Precision + Recall)</span></div><div><b>Expected utility</b><span>EU(a) = Σ P(o|a) · U(o) · A: 88, B: 100 → B</span></div><div><b>Threshold</b><span>act if P(bad) &gt; C_act / C_bad · 2,000 / 10,000 = 20% · 0.72 × 10,000 = 7,200 &gt; 2,000</span></div></div></details>
 </section>
 
 <!-- ===================== 06:00 · INCIDENT REPORT ===================== -->
@@ -2385,6 +2418,8 @@ svg { display: block; width: 100%; height: auto; }
     const atEnd = cur === pages.length - 1 && shown >= n;
     nextBtn.textContent = atEnd ? 'Back to the cover ↺' : 'Next ▸';
     backBtn.disabled = cur === 0;
+    let act = -1; chapters.forEach((c, k) => { if (c.page <= cur) act = k; });
+    sideBtns.forEach((b, k) => b.classList.toggle('on', k === act));
   }
 
   // contents: built from the data-toc attributes of the pages
@@ -2410,17 +2445,29 @@ svg { display: block; width: 100%; height: auto; }
     });
   });
 
+  const sideBtns = chapters.map(c => {
+    const li = document.createElement('li'), b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = '<span></span><span></span>';
+    b.firstChild.textContent = c.time || '·';
+    b.lastChild.textContent = c.title;
+    b.addEventListener('click', () => { menu.hidden = true; enter(c.page, false); });
+    li.appendChild(b); $('.side-list').appendChild(li);
+    return b;
+  });
+
   nextBtn.addEventListener('click', next);
   backBtn.addEventListener('click', back);
   $('[data-go="menu"]').addEventListener('click', () => (menu.hidden = !menu.hidden));
   $('[data-go="close"]').addEventListener('click', () => (menu.hidden = true));
   menu.addEventListener('click', e => { if (e.target === menu) menu.hidden = true; });
   $('main').addEventListener('click', e => {
-    if (e.target.closest('button, a, input')) return;
+    if (e.target.closest('button, a, input, summary, details')) return;
     if (String(window.getSelection ? window.getSelection() : '').length) return;
     next();
   });
   document.addEventListener('keydown', e => {
+    if (e.target.closest && e.target.closest('summary')) return;
     if (e.key === 'Escape') { menu.hidden = true; return; }
     if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); next(); }
     else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); back(); }
